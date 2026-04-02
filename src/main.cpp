@@ -43,7 +43,8 @@ constexpr int PWM_M2_L_CH = 3;
 
 constexpr float ENCODER_PPR = 11.0f;
 constexpr float GEAR_RATIO = 18.8f;
-constexpr float ENCODER_EDGE_MULTIPLIER = 2.0f;
+// Using channel A rising edges only: 1 count per encoder pulse period.
+constexpr float ENCODER_EDGE_MULTIPLIER = 1.0f;
 constexpr float COUNTS_PER_OUTPUT_REV = ENCODER_PPR * GEAR_RATIO * ENCODER_EDGE_MULTIPLIER;
 
 constexpr float WHEEL_RADIUS_M = 0.065f;
@@ -52,6 +53,7 @@ constexpr float WHEEL_BASE_M = 0.24f;
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
 constexpr uint32_t TELEMETRY_PERIOD_MS = 50;
 constexpr uint32_t CMD_TIMEOUT_MS = 300;
+constexpr uint32_t RPM_ESTIMATION_WINDOW_MS = 50;
 
 constexpr float M1_KP = 1.00f;
 constexpr float M1_KI = 0.50f;
@@ -66,8 +68,9 @@ constexpr float ZERO_CMD_RPM_EPS = 0.8f;
 constexpr float ZERO_CMD_MPS_EPS = 0.01f;
 constexpr float ZERO_CMD_RADPS_EPS = 0.05f;
 constexpr float RPM_NOISE_EPS = 0.05f;
+constexpr float MAX_PLAUSIBLE_RPM = 700.0f;
 
-constexpr bool M1_ENCODER_INVERT = false;
+constexpr bool M1_ENCODER_INVERT = true;
 constexpr bool M2_ENCODER_INVERT = false;
 
 volatile int32_t g_m1_encoder_count = 0;
@@ -196,7 +199,7 @@ void setTargetsFromCmdVel(float linear_x_mps, float angular_z_radps) {
   g_m2_target_rpm = rpm_right;
 }
 
-void IRAM_ATTR m1EncoderA_ISR() {
+void IRAM_ATTR m1EncoderISR() {
   int8_t delta = (digitalRead(M1_ENC_A_PIN) == digitalRead(M1_ENC_B_PIN)) ? 1 : -1;
   if (M1_ENCODER_INVERT) {
     delta = -delta;
@@ -204,24 +207,8 @@ void IRAM_ATTR m1EncoderA_ISR() {
   g_m1_encoder_count += delta;
 }
 
-void IRAM_ATTR m1EncoderB_ISR() {
-  int8_t delta = (digitalRead(M1_ENC_A_PIN) != digitalRead(M1_ENC_B_PIN)) ? 1 : -1;
-  if (M1_ENCODER_INVERT) {
-    delta = -delta;
-  }
-  g_m1_encoder_count += delta;
-}
-
-void IRAM_ATTR m2EncoderA_ISR() {
+void IRAM_ATTR m2EncoderISR() {
   int8_t delta = (digitalRead(M2_ENC_A_PIN) == digitalRead(M2_ENC_B_PIN)) ? 1 : -1;
-  if (M2_ENCODER_INVERT) {
-    delta = -delta;
-  }
-  g_m2_encoder_count += delta;
-}
-
-void IRAM_ATTR m2EncoderB_ISR() {
-  int8_t delta = (digitalRead(M2_ENC_A_PIN) != digitalRead(M2_ENC_B_PIN)) ? 1 : -1;
   if (M2_ENCODER_INVERT) {
     delta = -delta;
   }
@@ -398,35 +385,67 @@ void initEncoders() {
   pinMode(M2_ENC_A_PIN, INPUT_PULLUP);
   pinMode(M2_ENC_B_PIN, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(M1_ENC_A_PIN), m1EncoderA_ISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(M1_ENC_B_PIN), m1EncoderB_ISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(M2_ENC_A_PIN), m2EncoderA_ISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(M2_ENC_B_PIN), m2EncoderB_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(M1_ENC_A_PIN), m1EncoderISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(M2_ENC_A_PIN), m2EncoderISR, RISING);
 }
 
 void runControlStep(uint32_t dt_ms) {
   static int32_t prev_m1_count = 0;
   static int32_t prev_m2_count = 0;
+  static int32_t accum_m1_delta = 0;
+  static int32_t accum_m2_delta = 0;
+  static uint32_t accum_dt_ms = 0;
 
   noInterrupts();
   const int32_t m1_count = g_m1_encoder_count;
   const int32_t m2_count = g_m2_encoder_count;
   interrupts();
 
-  const int32_t m1_delta = m1_count - prev_m1_count;
-  const int32_t m2_delta = m2_count - prev_m2_count;
+  int32_t m1_delta = m1_count - prev_m1_count;
+  int32_t m2_delta = m2_count - prev_m2_count;
+  const float dt_s = static_cast<float>(dt_ms) / 1000.0f;
+
+  // Reject impossible pulse bursts using a dynamic bound based on dt and max RPM.
+  const float max_counts_f =
+      ((MAX_PLAUSIBLE_RPM / 60.0f) * COUNTS_PER_OUTPUT_REV * dt_s * 1.5f) + 1.0f;
+  const int32_t max_delta_counts = static_cast<int32_t>(max_counts_f);
+
+  if (abs(m1_delta) > max_delta_counts) {
+    m1_delta = 0;
+  }
+  if (abs(m2_delta) > max_delta_counts) {
+    m2_delta = 0;
+  }
 
   prev_m1_count = m1_count;
   prev_m2_count = m2_count;
 
-  const float dt_s = static_cast<float>(dt_ms) / 1000.0f;
-  const float rpm_factor = (60.0f / COUNTS_PER_OUTPUT_REV) / dt_s;
+  accum_m1_delta += m1_delta;
+  accum_m2_delta += m2_delta;
+  accum_dt_ms += dt_ms;
 
-  const float m1_rpm_raw = static_cast<float>(m1_delta) * rpm_factor;
-  const float m2_rpm_raw = static_cast<float>(m2_delta) * rpm_factor;
+  if (accum_dt_ms >= RPM_ESTIMATION_WINDOW_MS) {
+    const float window_dt_s = static_cast<float>(accum_dt_ms) / 1000.0f;
+    const float rpm_factor = (60.0f / COUNTS_PER_OUTPUT_REV) / window_dt_s;
 
-  g_m1_measured_rpm = (SPEED_LPF_ALPHA * m1_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m1_measured_rpm);
-  g_m2_measured_rpm = (SPEED_LPF_ALPHA * m2_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m2_measured_rpm);
+    float m1_rpm_raw = static_cast<float>(accum_m1_delta) * rpm_factor;
+    float m2_rpm_raw = static_cast<float>(accum_m2_delta) * rpm_factor;
+
+    // Reject encoder spikes/noise that exceed physical motor limits.
+    if (fabsf(m1_rpm_raw) > MAX_PLAUSIBLE_RPM) {
+      m1_rpm_raw = 0.0f;
+    }
+    if (fabsf(m2_rpm_raw) > MAX_PLAUSIBLE_RPM) {
+      m2_rpm_raw = 0.0f;
+    }
+
+    g_m1_measured_rpm = (SPEED_LPF_ALPHA * m1_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m1_measured_rpm);
+    g_m2_measured_rpm = (SPEED_LPF_ALPHA * m2_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m2_measured_rpm);
+
+    accum_m1_delta = 0;
+    accum_m2_delta = 0;
+    accum_dt_ms = 0;
+  }
 
   if (fabsf(g_m1_measured_rpm) < RPM_NOISE_EPS) {
     g_m1_measured_rpm = 0.0f;
