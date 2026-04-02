@@ -5,6 +5,14 @@
 #define USE_MICROROS 0
 #endif
 
+#ifndef M1_MOTOR_DIR_INVERT
+#define M1_MOTOR_DIR_INVERT 0
+#endif
+
+#ifndef M2_MOTOR_DIR_INVERT
+#define M2_MOTOR_DIR_INVERT 1
+#endif
+
 #if USE_MICROROS
 #include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
@@ -23,7 +31,7 @@ constexpr int M1_LPWM_PIN = 16;
 constexpr int M1_REN_PIN = 15;
 constexpr int M1_LEN_PIN = 7;
 
-constexpr int M2_RPWM_PIN = 20;
+constexpr int M2_RPWM_PIN = 47;
 constexpr int M2_LPWM_PIN = 21;
 constexpr int M2_REN_PIN = 2;
 constexpr int M2_LEN_PIN = 1;
@@ -69,6 +77,9 @@ constexpr float ZERO_CMD_MPS_EPS = 0.01f;
 constexpr float ZERO_CMD_RADPS_EPS = 0.05f;
 constexpr float RPM_NOISE_EPS = 0.05f;
 constexpr float MAX_PLAUSIBLE_RPM = 700.0f;
+
+constexpr bool M1_MOTOR_DIR_INVERTED = (M1_MOTOR_DIR_INVERT != 0);
+constexpr bool M2_MOTOR_DIR_INVERTED = (M2_MOTOR_DIR_INVERT != 0);
 
 constexpr bool M1_ENCODER_INVERT = true;
 constexpr bool M2_ENCODER_INVERT = false;
@@ -169,13 +180,16 @@ void applyMotorCommand(int motor_index, int pwm_signed) {
     pwm_signed = 0;
   }
 
-  const bool forward = pwm_signed >= 0;
-  const int duty = abs(pwm_signed);
-
   if (motor_index == 1) {
+    const int cmd = M1_MOTOR_DIR_INVERTED ? -pwm_signed : pwm_signed;
+    const bool forward = cmd >= 0;
+    const int duty = abs(cmd);
     ledcWrite(PWM_M1_R_CH, forward ? duty : 0);
     ledcWrite(PWM_M1_L_CH, forward ? 0 : duty);
   } else {
+    const int cmd = M2_MOTOR_DIR_INVERTED ? -pwm_signed : pwm_signed;
+    const bool forward = cmd >= 0;
+    const int duty = abs(cmd);
     ledcWrite(PWM_M2_R_CH, forward ? duty : 0);
     ledcWrite(PWM_M2_L_CH, forward ? 0 : duty);
   }
