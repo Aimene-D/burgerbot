@@ -46,8 +46,8 @@ constexpr float GEAR_RATIO = 18.8f;
 constexpr float ENCODER_EDGE_MULTIPLIER = 2.0f;
 constexpr float COUNTS_PER_OUTPUT_REV = ENCODER_PPR * GEAR_RATIO * ENCODER_EDGE_MULTIPLIER;
 
-constexpr float WHEEL_RADIUS_M = 0.05f;
-constexpr float WHEEL_BASE_M = 0.20f;
+constexpr float WHEEL_RADIUS_M = 0.065f;
+constexpr float WHEEL_BASE_M = 0.24f;
 
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
 constexpr uint32_t TELEMETRY_PERIOD_MS = 50;
@@ -65,6 +65,7 @@ constexpr int PWM_DEADBAND = 8;
 constexpr float ZERO_CMD_RPM_EPS = 0.8f;
 constexpr float ZERO_CMD_MPS_EPS = 0.01f;
 constexpr float ZERO_CMD_RADPS_EPS = 0.05f;
+constexpr float RPM_NOISE_EPS = 0.05f;
 
 constexpr bool M1_ENCODER_INVERT = false;
 constexpr bool M2_ENCODER_INVERT = false;
@@ -195,24 +196,36 @@ void setTargetsFromCmdVel(float linear_x_mps, float angular_z_radps) {
   g_m2_target_rpm = rpm_right;
 }
 
-void IRAM_ATTR m1EncoderISR() {
-  const bool a = digitalRead(M1_ENC_A_PIN);
-  const bool b = digitalRead(M1_ENC_B_PIN);
-  int dir = (a == b) ? 1 : -1;
+void IRAM_ATTR m1EncoderA_ISR() {
+  int8_t delta = (digitalRead(M1_ENC_A_PIN) == digitalRead(M1_ENC_B_PIN)) ? 1 : -1;
   if (M1_ENCODER_INVERT) {
-    dir = -dir;
+    delta = -delta;
   }
-  g_m1_encoder_count += dir;
+  g_m1_encoder_count += delta;
 }
 
-void IRAM_ATTR m2EncoderISR() {
-  const bool a = digitalRead(M2_ENC_A_PIN);
-  const bool b = digitalRead(M2_ENC_B_PIN);
-  int dir = (a == b) ? 1 : -1;
-  if (M2_ENCODER_INVERT) {
-    dir = -dir;
+void IRAM_ATTR m1EncoderB_ISR() {
+  int8_t delta = (digitalRead(M1_ENC_A_PIN) != digitalRead(M1_ENC_B_PIN)) ? 1 : -1;
+  if (M1_ENCODER_INVERT) {
+    delta = -delta;
   }
-  g_m2_encoder_count += dir;
+  g_m1_encoder_count += delta;
+}
+
+void IRAM_ATTR m2EncoderA_ISR() {
+  int8_t delta = (digitalRead(M2_ENC_A_PIN) == digitalRead(M2_ENC_B_PIN)) ? 1 : -1;
+  if (M2_ENCODER_INVERT) {
+    delta = -delta;
+  }
+  g_m2_encoder_count += delta;
+}
+
+void IRAM_ATTR m2EncoderB_ISR() {
+  int8_t delta = (digitalRead(M2_ENC_A_PIN) != digitalRead(M2_ENC_B_PIN)) ? 1 : -1;
+  if (M2_ENCODER_INVERT) {
+    delta = -delta;
+  }
+  g_m2_encoder_count += delta;
 }
 
 #if USE_MICROROS
@@ -385,8 +398,10 @@ void initEncoders() {
   pinMode(M2_ENC_A_PIN, INPUT_PULLUP);
   pinMode(M2_ENC_B_PIN, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(M1_ENC_A_PIN), m1EncoderISR, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(M2_ENC_A_PIN), m2EncoderISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(M1_ENC_A_PIN), m1EncoderA_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(M1_ENC_B_PIN), m1EncoderB_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(M2_ENC_A_PIN), m2EncoderA_ISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(M2_ENC_B_PIN), m2EncoderB_ISR, CHANGE);
 }
 
 void runControlStep(uint32_t dt_ms) {
@@ -412,6 +427,13 @@ void runControlStep(uint32_t dt_ms) {
 
   g_m1_measured_rpm = (SPEED_LPF_ALPHA * m1_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m1_measured_rpm);
   g_m2_measured_rpm = (SPEED_LPF_ALPHA * m2_rpm_raw) + ((1.0f - SPEED_LPF_ALPHA) * g_m2_measured_rpm);
+
+  if (fabsf(g_m1_measured_rpm) < RPM_NOISE_EPS) {
+    g_m1_measured_rpm = 0.0f;
+  }
+  if (fabsf(g_m2_measured_rpm) < RPM_NOISE_EPS) {
+    g_m2_measured_rpm = 0.0f;
+  }
 
   if ((millis() - g_last_cmd_ms) > CMD_TIMEOUT_MS) {
     g_m1_target_rpm = 0.0f;
