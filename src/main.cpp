@@ -62,6 +62,9 @@ constexpr float M2_KD = 0.01f;
 
 constexpr float SPEED_LPF_ALPHA = 0.30f;
 constexpr int PWM_DEADBAND = 8;
+constexpr float ZERO_CMD_RPM_EPS = 0.8f;
+constexpr float ZERO_CMD_MPS_EPS = 0.01f;
+constexpr float ZERO_CMD_RADPS_EPS = 0.05f;
 
 constexpr bool M1_ENCODER_INVERT = false;
 constexpr bool M2_ENCODER_INVERT = false;
@@ -81,12 +84,17 @@ rcl_allocator_t g_allocator;
 rclc_support_t g_support;
 rcl_node_t g_node;
 rcl_subscription_t g_cmd_sub;
+rcl_subscription_t g_rpm_cmd_sub;
 rcl_publisher_t g_wheel_pub;
+rcl_publisher_t g_rpm_feedback_pub;
 rclc_executor_t g_executor;
 
 geometry_msgs__msg__Twist g_cmd_msg;
+std_msgs__msg__Float32MultiArray g_rpm_cmd_msg;
 std_msgs__msg__Float32MultiArray g_wheel_msg;
 float g_wheel_data[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+std_msgs__msg__Float32MultiArray g_rpm_feedback_msg;
+float g_rpm_feedback_data[2] = {0.0f, 0.0f};
 
 #endif
 
@@ -170,6 +178,13 @@ void applyMotorCommand(int motor_index, int pwm_signed) {
 }
 
 void setTargetsFromCmdVel(float linear_x_mps, float angular_z_radps) {
+  if (fabsf(linear_x_mps) < ZERO_CMD_MPS_EPS) {
+    linear_x_mps = 0.0f;
+  }
+  if (fabsf(angular_z_radps) < ZERO_CMD_RADPS_EPS) {
+    angular_z_radps = 0.0f;
+  }
+
   const float v_left = linear_x_mps - (angular_z_radps * WHEEL_BASE_M * 0.5f);
   const float v_right = linear_x_mps + (angular_z_radps * WHEEL_BASE_M * 0.5f);
 
@@ -207,6 +222,15 @@ void cmdVelCallback(const void* msg_in) {
   g_last_cmd_ms = millis();
 }
 
+void rpmCmdCallback(const void* msg_in) {
+  const auto* msg = static_cast<const std_msgs__msg__Float32MultiArray*>(msg_in);
+  if (msg->data.size >= 2) {
+    g_m1_target_rpm = msg->data.data[0];
+    g_m2_target_rpm = msg->data.data[1];
+    g_last_cmd_ms = millis();
+  }
+}
+
 bool createRosEntities() {
   g_allocator = rcl_get_default_allocator();
 
@@ -226,6 +250,14 @@ bool createRosEntities() {
     return false;
   }
 
+  if (rclc_subscription_init_default(
+          &g_rpm_cmd_sub,
+          &g_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+          "/motor_rpm_cmd") != RCL_RET_OK) {
+    return false;
+  }
+
   if (rclc_publisher_init_default(
           &g_wheel_pub,
           &g_node,
@@ -234,11 +266,23 @@ bool createRosEntities() {
     return false;
   }
 
+  if (rclc_publisher_init_default(
+          &g_rpm_feedback_pub,
+          &g_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+          "/motor_rpm_feedback") != RCL_RET_OK) {
+    return false;
+  }
+
   g_wheel_msg.data.data = g_wheel_data;
   g_wheel_msg.data.size = 4;
   g_wheel_msg.data.capacity = 4;
 
-  if (rclc_executor_init(&g_executor, &g_support.context, 1, &g_allocator) != RCL_RET_OK) {
+  g_rpm_feedback_msg.data.data = g_rpm_feedback_data;
+  g_rpm_feedback_msg.data.size = 2;
+  g_rpm_feedback_msg.data.capacity = 2;
+
+  if (rclc_executor_init(&g_executor, &g_support.context, 2, &g_allocator) != RCL_RET_OK) {
     return false;
   }
 
@@ -247,6 +291,15 @@ bool createRosEntities() {
           &g_cmd_sub,
           &g_cmd_msg,
           &cmdVelCallback,
+          ON_NEW_DATA) != RCL_RET_OK) {
+    return false;
+  }
+
+  if (rclc_executor_add_subscription(
+          &g_executor,
+          &g_rpm_cmd_sub,
+          &g_rpm_cmd_msg,
+          &rpmCmdCallback,
           ON_NEW_DATA) != RCL_RET_OK) {
     return false;
   }
@@ -260,7 +313,9 @@ void destroyRosEntities() {
     return;
   }
 
+  (void)rcl_subscription_fini(&g_rpm_cmd_sub, &g_node);
   (void)rcl_subscription_fini(&g_cmd_sub, &g_node);
+  (void)rcl_publisher_fini(&g_rpm_feedback_pub, &g_node);
   (void)rcl_publisher_fini(&g_wheel_pub, &g_node);
   (void)rcl_node_fini(&g_node);
   (void)rclc_executor_fini(&g_executor);
@@ -280,6 +335,10 @@ void publishWheelSpeeds() {
   g_wheel_data[3] = g_m2_measured_rpm;
 
   (void)rcl_publish(&g_wheel_pub, &g_wheel_msg, nullptr);
+
+  g_rpm_feedback_data[0] = g_m1_measured_rpm;
+  g_rpm_feedback_data[1] = g_m2_measured_rpm;
+  (void)rcl_publish(&g_rpm_feedback_pub, &g_rpm_feedback_msg, nullptr);
 }
 
 #else
@@ -357,6 +416,19 @@ void runControlStep(uint32_t dt_ms) {
   if ((millis() - g_last_cmd_ms) > CMD_TIMEOUT_MS) {
     g_m1_target_rpm = 0.0f;
     g_m2_target_rpm = 0.0f;
+  }
+
+  const bool stop_requested =
+      (fabsf(g_m1_target_rpm) <= ZERO_CMD_RPM_EPS) &&
+      (fabsf(g_m2_target_rpm) <= ZERO_CMD_RPM_EPS);
+
+  if (stop_requested) {
+    g_m1_target_rpm = 0.0f;
+    g_m2_target_rpm = 0.0f;
+    g_m1_pid.Reset();
+    g_m2_pid.Reset();
+    stopMotors();
+    return;
   }
 
   const int m1_pwm = static_cast<int>(g_m1_pid.Update(g_m1_target_rpm, g_m1_measured_rpm, dt_s));
