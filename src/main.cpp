@@ -1,5 +1,9 @@
 #include <Arduino.h>
 #include <math.h>
+#include <Preferences.h>
+#include <Wire.h>
+#include <Adafruit_HMC5883_U.h>
+#include <Adafruit_LSM6DS3.h>
 
 #ifndef USE_MICROROS
 #define USE_MICROROS 0
@@ -41,6 +45,31 @@ constexpr int M1_ENC_A_PIN = 6;   // C1
 constexpr int M2_ENC_B_PIN = 38;  // C2
 constexpr int M2_ENC_A_PIN = 37;  // C1
 
+constexpr int I2C_SDA_PIN = 8;
+constexpr int I2C_SCL_PIN = 9;
+constexpr uint32_t I2C_FREQ_HZ = 400000;
+constexpr uint8_t LSM6DS3_I2C_ADDR_PRIMARY = 0x6A;
+constexpr uint8_t LSM6DS3_I2C_ADDR_ALT = 0x6B;
+constexpr uint8_t HMC5883L_I2C_ADDR = 0x1E;
+constexpr uint8_t QMC5883_I2C_ADDR = 0x0D;
+constexpr uint8_t QMC_REG_X_LSB = 0x00;
+constexpr uint8_t QMC_REG_STATUS = 0x06;
+constexpr uint8_t QMC_REG_CONTROL_1 = 0x09;
+constexpr uint8_t QMC_REG_CONTROL_2 = 0x0A;
+constexpr uint8_t QMC_REG_SET_RESET = 0x0B;
+constexpr uint8_t QMC_STATUS_DATA_READY = 0x01;
+constexpr float QMC_LSB_TO_UT = 0.1f;
+constexpr uint32_t IMU_READ_PERIOD_MS = 50;
+constexpr uint32_t COMPASS_READ_PERIOD_MS = 50;
+constexpr uint32_t SENSOR_DEBUG_PERIOD_MS = 1000;
+constexpr float COMPASS_DECLINATION_DEG = 0.0f;
+constexpr float HMC_OFFSET_X_UT = 0.0f;
+constexpr float HMC_OFFSET_Y_UT = 0.0f;
+constexpr float HMC_OFFSET_Z_UT = 0.0f;
+constexpr bool ENABLE_TILT_COMPENSATION = false;
+constexpr float COMPASS_STALE_EPS_UT = 0.02f;
+constexpr uint32_t COMPASS_STALE_WARN_MS = 2000;
+
 constexpr int PWM_FREQ_HZ = 20000;
 constexpr int PWM_RES_BITS = 8;
 constexpr int PWM_MAX = (1 << PWM_RES_BITS) - 1;
@@ -78,6 +107,11 @@ constexpr float ZERO_CMD_RADPS_EPS = 0.05f;
 constexpr float RPM_NOISE_EPS = 0.05f;
 constexpr float MAX_PLAUSIBLE_RPM = 700.0f;
 
+constexpr const char* PID_PREFS_NAMESPACE = "pid";
+constexpr const char* PID_PREF_KEY_KP = "kp";
+constexpr const char* PID_PREF_KEY_KI = "ki";
+constexpr const char* PID_PREF_KEY_KD = "kd";
+
 constexpr bool M1_MOTOR_DIR_INVERTED = (M1_MOTOR_DIR_INVERT != 0);
 constexpr bool M2_MOTOR_DIR_INVERTED = (M2_MOTOR_DIR_INVERT != 0);
 
@@ -94,22 +128,65 @@ float g_m2_measured_rpm = 0.0f;
 
 uint32_t g_last_cmd_ms = 0;
 
+Adafruit_LSM6DS3 g_lsm6ds3;
+Adafruit_HMC5883_Unified g_hmc5883(5883);
+
+uint8_t g_lsm6ds3_i2c_addr = LSM6DS3_I2C_ADDR_PRIMARY;
+bool g_imu_present = false;
+bool g_compass_present = false;
+bool g_imu_data_valid = false;
+bool g_compass_data_valid = false;
+bool g_compass_new_sample = false;
+uint32_t g_compass_stale_ms = 0;
+bool g_compass_using_qmc = false;
+
+struct ImuData {
+  float accel_x = 0.0f;
+  float accel_y = 0.0f;
+  float accel_z = 0.0f;
+  float gyro_x = 0.0f;
+  float gyro_y = 0.0f;
+  float gyro_z = 0.0f;
+  uint32_t last_read_ms = 0;
+};
+
+struct CompassData {
+  float mag_x = 0.0f;
+  float mag_y = 0.0f;
+  float mag_z = 0.0f;
+  float heading_deg = 0.0f;
+  uint32_t last_read_ms = 0;
+};
+
+ImuData g_imu_data;
+CompassData g_compass_data;
+
 #if USE_MICROROS
 rcl_allocator_t g_allocator;
 rclc_support_t g_support;
 rcl_node_t g_node;
 rcl_subscription_t g_cmd_sub;
 rcl_subscription_t g_rpm_cmd_sub;
+rcl_subscription_t g_pid_config_sub;
 rcl_publisher_t g_wheel_pub;
 rcl_publisher_t g_rpm_feedback_pub;
+rcl_publisher_t g_imu_pub;
+rcl_publisher_t g_compass_pub;
 rclc_executor_t g_executor;
 
 geometry_msgs__msg__Twist g_cmd_msg;
 std_msgs__msg__Float32MultiArray g_rpm_cmd_msg;
+float g_rpm_cmd_data[2] = {0.0f, 0.0f};
+std_msgs__msg__Float32MultiArray g_pid_config_msg;
+float g_pid_config_data[3] = {0.0f, 0.0f, 0.0f};
 std_msgs__msg__Float32MultiArray g_wheel_msg;
 float g_wheel_data[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 std_msgs__msg__Float32MultiArray g_rpm_feedback_msg;
 float g_rpm_feedback_data[2] = {0.0f, 0.0f};
+std_msgs__msg__Float32MultiArray g_imu_msg;
+float g_imu_ros_data[7] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+std_msgs__msg__Float32MultiArray g_compass_msg;
+float g_compass_ros_data[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
 #endif
 
@@ -122,10 +199,24 @@ enum class AgentState {
 
 AgentState g_agent_state = AgentState::Waiting;
 
+Preferences g_pid_preferences;
+
 class PidController {
  public:
   PidController(float kp, float ki, float kd)
       : kp_(kp), ki_(ki), kd_(kd) {}
+
+  void SetGains(float kp, float ki, float kd) {
+    kp_ = kp;
+    ki_ = ki;
+    kd_ = kd;
+  }
+
+  void GetGains(float& kp, float& ki, float& kd) const {
+    kp = kp_;
+    ki = ki_;
+    kd = kd_;
+  }
 
   void Reset() {
     integral_ = 0.0f;
@@ -166,6 +257,39 @@ class PidController {
 
 PidController g_m1_pid(M1_KP, M1_KI, M1_KD);
 PidController g_m2_pid(M2_KP, M2_KI, M2_KD);
+
+void savePidGainsToNvs(float kp, float ki, float kd) {
+  if (!g_pid_preferences.begin(PID_PREFS_NAMESPACE, false)) {
+    return;
+  }
+
+  g_pid_preferences.putFloat(PID_PREF_KEY_KP, kp);
+  g_pid_preferences.putFloat(PID_PREF_KEY_KI, ki);
+  g_pid_preferences.putFloat(PID_PREF_KEY_KD, kd);
+  g_pid_preferences.end();
+}
+
+void loadPidGainsFromNvsAndApply() {
+  if (!g_pid_preferences.begin(PID_PREFS_NAMESPACE, true)) {
+    return;
+  }
+
+  const bool has_kp = g_pid_preferences.isKey(PID_PREF_KEY_KP);
+  const bool has_ki = g_pid_preferences.isKey(PID_PREF_KEY_KI);
+  const bool has_kd = g_pid_preferences.isKey(PID_PREF_KEY_KD);
+
+  if (has_kp && has_ki && has_kd) {
+    const float kp = g_pid_preferences.getFloat(PID_PREF_KEY_KP, M1_KP);
+    const float ki = g_pid_preferences.getFloat(PID_PREF_KEY_KI, M1_KI);
+    const float kd = g_pid_preferences.getFloat(PID_PREF_KEY_KD, M1_KD);
+    g_m1_pid.SetGains(kp, ki, kd);
+    g_m2_pid.SetGains(kp, ki, kd);
+    g_m1_pid.Reset();
+    g_m2_pid.Reset();
+  }
+
+  g_pid_preferences.end();
+}
 
 inline void stopMotors() {
   ledcWrite(PWM_M1_R_CH, 0);
@@ -245,6 +369,23 @@ void rpmCmdCallback(const void* msg_in) {
   }
 }
 
+void pidConfigCallback(const void* msg_in) {
+  const auto* msg = static_cast<const std_msgs__msg__Float32MultiArray*>(msg_in);
+  if (msg->data.size < 3) {
+    return;
+  }
+
+  const float kp = msg->data.data[0];
+  const float ki = msg->data.data[1];
+  const float kd = msg->data.data[2];
+
+  g_m1_pid.SetGains(kp, ki, kd);
+  g_m2_pid.SetGains(kp, ki, kd);
+  g_m1_pid.Reset();
+  g_m2_pid.Reset();
+  savePidGainsToNvs(kp, ki, kd);
+}
+
 bool createRosEntities() {
   g_allocator = rcl_get_default_allocator();
 
@@ -272,6 +413,14 @@ bool createRosEntities() {
     return false;
   }
 
+  if (rclc_subscription_init_default(
+          &g_pid_config_sub,
+          &g_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+          "/pid_config") != RCL_RET_OK) {
+    return false;
+  }
+
   if (rclc_publisher_init_default(
           &g_wheel_pub,
           &g_node,
@@ -288,15 +437,48 @@ bool createRosEntities() {
     return false;
   }
 
+  if (rclc_publisher_init_default(
+          &g_imu_pub,
+          &g_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+          "/imu_raw") != RCL_RET_OK) {
+    return false;
+  }
+
+  if (rclc_publisher_init_default(
+          &g_compass_pub,
+          &g_node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+          "/compass_heading") != RCL_RET_OK) {
+    return false;
+  }
+
   g_wheel_msg.data.data = g_wheel_data;
   g_wheel_msg.data.size = 4;
   g_wheel_msg.data.capacity = 4;
+
+  // Pre-allocate incoming array buffers for subscriptions.
+  g_rpm_cmd_msg.data.data = g_rpm_cmd_data;
+  g_rpm_cmd_msg.data.size = 0;
+  g_rpm_cmd_msg.data.capacity = 2;
+
+  g_pid_config_msg.data.data = g_pid_config_data;
+  g_pid_config_msg.data.size = 0;
+  g_pid_config_msg.data.capacity = 3;
 
   g_rpm_feedback_msg.data.data = g_rpm_feedback_data;
   g_rpm_feedback_msg.data.size = 2;
   g_rpm_feedback_msg.data.capacity = 2;
 
-  if (rclc_executor_init(&g_executor, &g_support.context, 2, &g_allocator) != RCL_RET_OK) {
+  g_imu_msg.data.data = g_imu_ros_data;
+  g_imu_msg.data.size = 7;
+  g_imu_msg.data.capacity = 7;
+
+  g_compass_msg.data.data = g_compass_ros_data;
+  g_compass_msg.data.size = 5;
+  g_compass_msg.data.capacity = 5;
+
+  if (rclc_executor_init(&g_executor, &g_support.context, 3, &g_allocator) != RCL_RET_OK) {
     return false;
   }
 
@@ -318,6 +500,15 @@ bool createRosEntities() {
     return false;
   }
 
+  if (rclc_executor_add_subscription(
+          &g_executor,
+          &g_pid_config_sub,
+          &g_pid_config_msg,
+          &pidConfigCallback,
+          ON_NEW_DATA) != RCL_RET_OK) {
+    return false;
+  }
+
   g_ros_entities_created = true;
   return true;
 }
@@ -327,8 +518,11 @@ void destroyRosEntities() {
     return;
   }
 
+  (void)rcl_subscription_fini(&g_pid_config_sub, &g_node);
   (void)rcl_subscription_fini(&g_rpm_cmd_sub, &g_node);
   (void)rcl_subscription_fini(&g_cmd_sub, &g_node);
+  (void)rcl_publisher_fini(&g_compass_pub, &g_node);
+  (void)rcl_publisher_fini(&g_imu_pub, &g_node);
   (void)rcl_publisher_fini(&g_rpm_feedback_pub, &g_node);
   (void)rcl_publisher_fini(&g_wheel_pub, &g_node);
   (void)rcl_node_fini(&g_node);
@@ -353,6 +547,25 @@ void publishWheelSpeeds() {
   g_rpm_feedback_data[0] = g_m1_measured_rpm;
   g_rpm_feedback_data[1] = g_m2_measured_rpm;
   (void)rcl_publish(&g_rpm_feedback_pub, &g_rpm_feedback_msg, nullptr);
+
+  g_imu_ros_data[0] = g_imu_data.accel_x;
+  g_imu_ros_data[1] = g_imu_data.accel_y;
+  g_imu_ros_data[2] = g_imu_data.accel_z;
+  g_imu_ros_data[3] = g_imu_data.gyro_x;
+  g_imu_ros_data[4] = g_imu_data.gyro_y;
+  g_imu_ros_data[5] = g_imu_data.gyro_z;
+  g_imu_ros_data[6] = g_imu_data_valid ? 1.0f : 0.0f;
+  (void)rcl_publish(&g_imu_pub, &g_imu_msg, nullptr);
+
+  if (g_compass_new_sample || !g_compass_data_valid) {
+    g_compass_ros_data[0] = g_compass_data.mag_x;
+    g_compass_ros_data[1] = g_compass_data.mag_y;
+    g_compass_ros_data[2] = g_compass_data.mag_z;
+    g_compass_ros_data[3] = g_compass_data.heading_deg;
+    g_compass_ros_data[4] = g_compass_data_valid ? 1.0f : 0.0f;
+    (void)rcl_publish(&g_compass_pub, &g_compass_msg, nullptr);
+    g_compass_new_sample = false;
+  }
 }
 
 #else
@@ -401,6 +614,239 @@ void initEncoders() {
 
   attachInterrupt(digitalPinToInterrupt(M1_ENC_A_PIN), m1EncoderISR, RISING);
   attachInterrupt(digitalPinToInterrupt(M2_ENC_A_PIN), m2EncoderISR, RISING);
+}
+
+bool probeI2cAddress(uint8_t address) {
+  Wire.beginTransmission(address);
+  return Wire.endTransmission() == 0;
+}
+
+bool writeI2cRegister(uint8_t address, uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(address);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission() == 0;
+}
+
+bool readI2cRegisters(uint8_t address, uint8_t start_reg, uint8_t* out_data, size_t len) {
+  Wire.beginTransmission(address);
+  Wire.write(start_reg);
+  if (Wire.endTransmission(false) != 0) {
+    return false;
+  }
+
+  const size_t read_count = Wire.requestFrom(static_cast<int>(address), static_cast<int>(len), 1);
+  if (read_count != len) {
+    return false;
+  }
+
+  for (size_t i = 0; i < len; ++i) {
+    out_data[i] = static_cast<uint8_t>(Wire.read());
+  }
+  return true;
+}
+
+bool initQmc5883() {
+  const bool ctrl2_ok = writeI2cRegister(QMC5883_I2C_ADDR, QMC_REG_CONTROL_2, 0x00);
+  const bool reset_ok = writeI2cRegister(QMC5883_I2C_ADDR, QMC_REG_SET_RESET, 0x01);
+  // OSR=512, RNG=8G, ODR=50Hz, MODE=continuous.
+  const bool ctrl1_ok = writeI2cRegister(QMC5883_I2C_ADDR, QMC_REG_CONTROL_1, 0x15);
+  return ctrl1_ok && ctrl2_ok && reset_ok;
+}
+
+bool readQmc5883MagneticField(float& mag_x_ut, float& mag_y_ut, float& mag_z_ut) {
+  uint8_t status = 0;
+  if (!readI2cRegisters(QMC5883_I2C_ADDR, QMC_REG_STATUS, &status, 1)) {
+    return false;
+  }
+  if ((status & QMC_STATUS_DATA_READY) == 0) {
+    return false;
+  }
+
+  uint8_t raw[6] = {0};
+  if (!readI2cRegisters(QMC5883_I2C_ADDR, QMC_REG_X_LSB, raw, sizeof(raw))) {
+    return false;
+  }
+
+  const int16_t raw_x = static_cast<int16_t>((static_cast<uint16_t>(raw[1]) << 8) | raw[0]);
+  const int16_t raw_y = static_cast<int16_t>((static_cast<uint16_t>(raw[3]) << 8) | raw[2]);
+  const int16_t raw_z = static_cast<int16_t>((static_cast<uint16_t>(raw[5]) << 8) | raw[4]);
+
+  mag_x_ut = static_cast<float>(raw_x) * QMC_LSB_TO_UT;
+  mag_y_ut = static_cast<float>(raw_y) * QMC_LSB_TO_UT;
+  mag_z_ut = static_cast<float>(raw_z) * QMC_LSB_TO_UT;
+  return true;
+}
+
+void initI2cAndSensors() {
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ);
+  delay(80);
+
+  const bool imu_primary_ok = probeI2cAddress(LSM6DS3_I2C_ADDR_PRIMARY);
+  const bool imu_alt_ok = probeI2cAddress(LSM6DS3_I2C_ADDR_ALT);
+  const bool compass_addr_ok = probeI2cAddress(HMC5883L_I2C_ADDR);
+  const bool qmc_addr_ok = probeI2cAddress(QMC5883_I2C_ADDR);
+
+  if (imu_primary_ok) {
+    g_lsm6ds3_i2c_addr = LSM6DS3_I2C_ADDR_PRIMARY;
+  } else if (imu_alt_ok) {
+    g_lsm6ds3_i2c_addr = LSM6DS3_I2C_ADDR_ALT;
+  }
+
+  g_imu_present = g_lsm6ds3.begin_I2C(g_lsm6ds3_i2c_addr, &Wire);
+  g_compass_present = g_hmc5883.begin();
+  g_compass_using_qmc = false;
+  if (!g_compass_present && qmc_addr_ok) {
+    g_compass_present = initQmc5883();
+    g_compass_using_qmc = g_compass_present;
+  }
+
+  Serial.printf("I2C SDA=%d SCL=%d Freq=%luHz\n", I2C_SDA_PIN, I2C_SCL_PIN, static_cast<unsigned long>(I2C_FREQ_HZ));
+  Serial.printf("I2C probe: LSM6DS3(0x6A)=%s LSM6DS3(0x6B)=%s HMC5883L(0x1E)=%s\n",
+                imu_primary_ok ? "OK" : "MISS",
+                imu_alt_ok ? "OK" : "MISS",
+                compass_addr_ok ? "OK" : "MISS");
+  if (!compass_addr_ok && qmc_addr_ok) {
+    Serial.println("WARNING: device found at 0x0D (QMC5883). HMC5883 library may return fixed values.");
+  }
+  Serial.printf("Sensor init: IMU=%s addr=0x%02X COMPASS=%s (%s)\n",
+                g_imu_present ? "OK" : "FAILED",
+                g_lsm6ds3_i2c_addr,
+                g_compass_present ? "OK" : "FAILED",
+                g_compass_using_qmc ? "QMC5883" : "HMC5883L");
+}
+
+float computeHeadingDegrees(float mag_x, float mag_y, float mag_z) {
+  float heading_rad = 0.0f;
+
+  if (ENABLE_TILT_COMPENSATION && g_imu_data_valid) {
+    const float roll = atan2f(g_imu_data.accel_y, g_imu_data.accel_z);
+    const float pitch = atan2f(-g_imu_data.accel_x,
+                               sqrtf((g_imu_data.accel_y * g_imu_data.accel_y) +
+                                     (g_imu_data.accel_z * g_imu_data.accel_z)));
+    const float xh = (mag_x * cosf(pitch)) + (mag_z * sinf(pitch));
+    const float yh =
+        (mag_x * sinf(roll) * sinf(pitch)) + (mag_y * cosf(roll)) - (mag_z * sinf(roll) * cosf(pitch));
+    heading_rad = atan2f(yh, xh);
+  } else {
+    heading_rad = atan2f(mag_y, mag_x);
+  }
+
+  heading_rad += COMPASS_DECLINATION_DEG * static_cast<float>(M_PI) / 180.0f;
+
+  while (heading_rad < 0.0f) {
+    heading_rad += 2.0f * static_cast<float>(M_PI);
+  }
+  while (heading_rad >= 2.0f * static_cast<float>(M_PI)) {
+    heading_rad -= 2.0f * static_cast<float>(M_PI);
+  }
+
+  return heading_rad * 180.0f / static_cast<float>(M_PI);
+}
+
+void readImuData(uint32_t now_ms) {
+  if (!g_imu_present || ((now_ms - g_imu_data.last_read_ms) < IMU_READ_PERIOD_MS)) {
+    return;
+  }
+
+  sensors_event_t accel;
+  sensors_event_t gyro;
+  sensors_event_t temp;
+
+  if (g_lsm6ds3.getEvent(&accel, &gyro, &temp)) {
+    g_imu_data.accel_x = accel.acceleration.x;
+    g_imu_data.accel_y = accel.acceleration.y;
+    g_imu_data.accel_z = accel.acceleration.z;
+    g_imu_data.gyro_x = gyro.gyro.x;
+    g_imu_data.gyro_y = gyro.gyro.y;
+    g_imu_data.gyro_z = gyro.gyro.z;
+    g_imu_data.last_read_ms = now_ms;
+    g_imu_data_valid = true;
+  } else {
+    g_imu_data_valid = false;
+  }
+}
+
+void readCompassData(uint32_t now_ms) {
+  if (!g_compass_present || ((now_ms - g_compass_data.last_read_ms) < COMPASS_READ_PERIOD_MS)) {
+    return;
+  }
+
+  const float prev_x = g_compass_data.mag_x;
+  const float prev_y = g_compass_data.mag_y;
+  const float prev_z = g_compass_data.mag_z;
+  const uint32_t prev_read_ms = g_compass_data.last_read_ms;
+
+  float mag_x = 0.0f;
+  float mag_y = 0.0f;
+  float mag_z = 0.0f;
+
+  if (g_compass_using_qmc) {
+    if (!readQmc5883MagneticField(mag_x, mag_y, mag_z)) {
+      return;
+    }
+  } else {
+    sensors_event_t event;
+    g_hmc5883.getEvent(&event);
+    mag_x = event.magnetic.x;
+    mag_y = event.magnetic.y;
+    mag_z = event.magnetic.z;
+  }
+
+  mag_x -= HMC_OFFSET_X_UT;
+  mag_y -= HMC_OFFSET_Y_UT;
+  mag_z -= HMC_OFFSET_Z_UT;
+
+  if (isnan(mag_x) || isnan(mag_y) || isnan(mag_z) || isinf(mag_x) || isinf(mag_y) || isinf(mag_z)) {
+    g_compass_data_valid = false;
+    return;
+  }
+
+  g_compass_data.mag_x = mag_x;
+  g_compass_data.mag_y = mag_y;
+  g_compass_data.mag_z = mag_z;
+  g_compass_data.heading_deg = computeHeadingDegrees(mag_x, mag_y, mag_z);
+  g_compass_data.last_read_ms = now_ms;
+  g_compass_data_valid = true;
+  g_compass_new_sample = true;
+
+  const float dx = fabsf(mag_x - prev_x);
+  const float dy = fabsf(mag_y - prev_y);
+  const float dz = fabsf(mag_z - prev_z);
+  if ((dx < COMPASS_STALE_EPS_UT) && (dy < COMPASS_STALE_EPS_UT) && (dz < COMPASS_STALE_EPS_UT)) {
+    if (prev_read_ms > 0) {
+      g_compass_stale_ms += (now_ms - prev_read_ms);
+    }
+  } else {
+    g_compass_stale_ms = 0;
+  }
+}
+
+void logSensorData(uint32_t now_ms) {
+  static uint32_t last_sensor_log_ms = 0;
+  if ((now_ms - last_sensor_log_ms) < SENSOR_DEBUG_PERIOD_MS) {
+    return;
+  }
+  last_sensor_log_ms = now_ms;
+
+  Serial.printf("IMU[%s] A[%.2f %.2f %.2f] G[%.3f %.3f %.3f] | MAG[%s] M[%.2f %.2f %.2f] HDG=%.1f\n",
+                g_imu_data_valid ? "OK" : "NA",
+                g_imu_data.accel_x,
+                g_imu_data.accel_y,
+                g_imu_data.accel_z,
+                g_imu_data.gyro_x,
+                g_imu_data.gyro_y,
+                g_imu_data.gyro_z,
+                g_compass_data_valid ? "OK" : "NA",
+                g_compass_data.mag_x,
+                g_compass_data.mag_y,
+                g_compass_data.mag_z,
+                g_compass_data.heading_deg);
+
+  if (g_compass_stale_ms >= COMPASS_STALE_WARN_MS) {
+    Serial.printf("WARNING: compass unchanged for %lums; rotate robot or verify module/address.\n",
+                  static_cast<unsigned long>(g_compass_stale_ms));
+  }
 }
 
 void runControlStep(uint32_t dt_ms) {
@@ -501,6 +947,8 @@ void setup() {
 
   initMotorPinsAndPwm();
   initEncoders();
+  initI2cAndSensors();
+  loadPidGainsFromNvsAndApply();
 
   g_last_cmd_ms = millis();
 
@@ -515,6 +963,10 @@ void loop() {
   static uint32_t last_agent_check_ms = 0;
 
   const uint32_t now = millis();
+
+  readImuData(now);
+  readCompassData(now);
+  logSensorData(now);
 
   if ((now - last_agent_check_ms) >= 500) {
     last_agent_check_ms = now;
