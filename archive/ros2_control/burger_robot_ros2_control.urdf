@@ -154,4 +154,22 @@
     <child link="rear_caster_link"/>
     <origin xyz="-0.0545 0 -0.0475" rpy="0 0 0"/>
   </joint>
+
+  <ros2_control name="moteur_system" type="system">
+    <hardware>
+      <plugin>mock_components/GenericSystem</plugin>
+    </hardware>
+
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
 </robot>
