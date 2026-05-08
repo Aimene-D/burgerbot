@@ -1,6 +1,7 @@
-# PlatformIO
+# PlatformIO build
 firmware/.pio/
-firmware/.vscode/
+.pio/
+.vscode/
 
 # ROS2
 ros2_ws/build/
