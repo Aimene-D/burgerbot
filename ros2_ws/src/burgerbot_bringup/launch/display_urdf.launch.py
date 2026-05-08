@@ -3,14 +3,11 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 import os
 
-
 def generate_launch_description():
-    pkg_share = get_package_share_directory("moteur_bringup")
+    pkg_share = get_package_share_directory("burgerbot_bringup")
     urdf_path = os.path.join(pkg_share, "urdf", "burger_robot.urdf")
-
     with open(urdf_path, "r", encoding="utf-8") as f:
         robot_description_content = f.read()
-
     return LaunchDescription([
         Node(
             package="robot_state_publisher",

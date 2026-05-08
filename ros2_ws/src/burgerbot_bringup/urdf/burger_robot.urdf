@@ -5,10 +5,12 @@
   </material>
   <material name="gray">
     <color rgba="0.6 0.6 0.6 1.0"/>
-    
   </material>
   <material name="blue">
     <color rgba="0.2 0.4 0.9 1.0"/>
+  </material>
+  <material name="orange">
+    <color rgba="1.0 0.4 0.0 1.0"/>
   </material>
 
   <link name="base_footprint"/>
@@ -19,7 +21,7 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Main circular chassis (burger form factor) -->
+  <!-- Main circular chassis -->
   <link name="base_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -41,7 +43,7 @@
     </collision>
   </link>
 
-  <!-- Left drive wheel: diameter 0.13 m -->
+  <!-- Left drive wheel -->
   <link name="left_wheel_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -70,7 +72,7 @@
     <axis xyz="1 0 0"/>
   </joint>
 
-  <!-- Right drive wheel: diameter 0.13 m -->
+  <!-- Right drive wheel -->
   <link name="right_wheel_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -99,7 +101,7 @@
     <axis xyz="1 0 0"/>
   </joint>
 
-  <!-- Front caster wheel: diameter ~0.035 m -->
+  <!-- Front caster wheel -->
   <link name="front_caster_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -127,7 +129,7 @@
     <origin xyz="0.0575 0 -0.0475" rpy="0 0 0"/>
   </joint>
 
-  <!-- Rear caster wheel: diameter ~0.035 m -->
+  <!-- Rear caster wheel -->
   <link name="rear_caster_link">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -171,4 +173,33 @@
     <child link="imu_link"/>
     <origin xyz="0 0 0.05" rpy="0 0 0"/>
   </joint>
+
+  <!-- LiDAR LDS-01 -->
+  <link name="base_scan">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.114"/>
+      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.0508" length="0.055"/>
+      </geometry>
+      <material name="orange"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.0508" length="0.055"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_scan"/>
+    <origin xyz="-0.032 0 0.171" rpy="0 0 0"/>
+  </joint>
+
 </robot>
