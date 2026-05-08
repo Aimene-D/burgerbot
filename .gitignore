@@ -14,3 +14,7 @@ __pycache__/
 
 # Backup
 *_BACKUP/
+
+# micro-ROS external dependencies
+ros2_ws/src/micro_ros_setup/
+ros2_ws/src/uros/
