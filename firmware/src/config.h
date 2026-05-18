@@ -34,7 +34,7 @@ constexpr uint8_t  QMC_STATUS_DATA_READY    = 0x01;
 constexpr float    QMC_LSB_TO_UT            = 0.1f;
 
 // ─── IMU / Compass timing ─────────────────────────────────
-constexpr uint32_t IMU_READ_PERIOD_MS        = 50;
+constexpr uint32_t IMU_READ_PERIOD_MS        = 20;
 constexpr uint32_t COMPASS_READ_PERIOD_MS    = 50;
 constexpr uint32_t SENSOR_DEBUG_PERIOD_MS    = 1000;
 constexpr float    YAW_COMPLEMENTARY_ALPHA   = 0.98f;
@@ -105,12 +105,17 @@ constexpr float UT_TO_TESLA = 1.0e-6f;
 
 // ─── Motor direction ──────────────────────────────────────
 #ifndef M1_MOTOR_DIR_INVERT
-#define M1_MOTOR_DIR_INVERT 0
+#define M1_MOTOR_DIR_INVERT 1
 #endif
 #ifndef M2_MOTOR_DIR_INVERT
-#define M2_MOTOR_DIR_INVERT 1
+#define M2_MOTOR_DIR_INVERT 0
 #endif
 constexpr bool M1_MOTOR_DIR_INVERTED = (M1_MOTOR_DIR_INVERT != 0);
 constexpr bool M2_MOTOR_DIR_INVERTED = (M2_MOTOR_DIR_INVERT != 0);
-constexpr bool M1_ENCODER_INVERT     = true;
-constexpr bool M2_ENCODER_INVERT     = false;
+constexpr bool M1_ENCODER_INVERT     = false;
+constexpr bool M2_ENCODER_INVERT     = true;
+
+// ─── LiDAR LDS02RR ────────────────────────────────────────
+constexpr int      LIDAR_MOTOR_PIN = 19;   // Gate IRLZ44N
+constexpr int      LIDAR_RX_PIN    = 20;   // TX LiDAR → RX ESP32
+constexpr uint32_t LIDAR_BAUD      = 115200;

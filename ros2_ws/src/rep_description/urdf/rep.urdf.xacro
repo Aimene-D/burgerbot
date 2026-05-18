@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rep">
+
+  <!-- Materials (shared across all assemblies) -->
+  <material name="Acier">
+    <color rgba="0.965 0.965 0.953 1.0"/>
+  </material>
+
+  <!-- Assembly includes -->
+  <xacro:include filename="$(find rep_description)/urdf/assemblies/rep.urdf.xacro"/>
+
+  <!-- Instantiate assemblies -->
+  <xacro:rep prefix=""/>
+
+</robot>

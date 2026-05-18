@@ -65,7 +65,7 @@ void runControlStep(uint32_t dt_ms) {
   const float v_l_mps = (g_m1_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
   const float v_r_mps = (g_m2_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
   g_odom.linear_mps   = 0.5f * (v_r_mps + v_l_mps);
-  g_odom.angular_radps = (v_r_mps - v_l_mps) / WHEEL_BASE_M;
+  g_odom.angular_radps = (v_l_mps - v_r_mps) / WHEEL_BASE_M;
 
   const float theta_mid = g_odom.theta_rad + (0.5f * g_odom.angular_radps * dt_s);
   g_odom.x_m       += g_odom.linear_mps * cosf(theta_mid) * dt_s;

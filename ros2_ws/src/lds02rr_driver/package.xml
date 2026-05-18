@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>lds02rr_driver</name>
+  <version>1.0.0</version>
+  <description>Driver ROS2 Jazzy pour LiDAR LDS02RR — burgerbot</description>
+  <maintainer email="todo@todo.com">aimen</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <exec_depend>python3-serial</exec_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
