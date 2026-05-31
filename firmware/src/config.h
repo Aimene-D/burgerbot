@@ -62,8 +62,8 @@ constexpr float ENCODER_PPR             = 11.0f;
 constexpr float GEAR_RATIO              = 18.8f;
 constexpr float ENCODER_EDGE_MULTIPLIER = 1.0f;
 constexpr float COUNTS_PER_OUTPUT_REV   = ENCODER_PPR * GEAR_RATIO * ENCODER_EDGE_MULTIPLIER;
-constexpr float WHEEL_RADIUS_M          = 0.065f;
-constexpr float WHEEL_BASE_M            = 0.24f;
+constexpr float WHEEL_RADIUS_M          = 0.0625f;
+constexpr float WHEEL_BASE_M            = 0.282f;
 
 // ─── Timing ───────────────────────────────────────────────
 constexpr uint32_t CONTROL_PERIOD_MS        = 10;
