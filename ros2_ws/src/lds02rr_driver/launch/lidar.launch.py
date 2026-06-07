@@ -1,7 +1,10 @@
 from launch import LaunchDescription
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 def generate_launch_description():
+    port = LaunchConfiguration('port', default='/dev/ttyACM1')
+
     return LaunchDescription([
         Node(
             package='lds02rr_driver',
@@ -9,7 +12,7 @@ def generate_launch_description():
             name='lds02rr_driver',
             output='screen',
             parameters=[{
-                'port':         '/dev/ttyUSB0',
+                'port':         port,
                 'baud':         115200,
                 'frame_id':     'lidar',
                 'range_min':    0.12,
