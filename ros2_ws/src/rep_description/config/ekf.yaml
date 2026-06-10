@@ -23,9 +23,12 @@ ekf_filter_node:
     imu0_differential: false
     imu0_relative: false
     imu0_remove_gravitational_acceleration: true
+    # Disabled vyaw (index 11) — wheel odometry gives accurate angular velocity
+    # without gyro residual bias drift. Re-enable if turns feel sluggish.
     imu0_config: [false, false, false,
                   false, false, false,
                   false, false, false,
-                  false, false, true,
+                  false, false, false,
                   false, false, false]
-    imu0_gyro_bias: [0.0586, -0.0880, -0.0910]
+    # Already subtracted in firmware/src/imu.cpp - keep at zero to avoid double correction
+    imu0_gyro_bias: [0.0, 0.0, 0.0]

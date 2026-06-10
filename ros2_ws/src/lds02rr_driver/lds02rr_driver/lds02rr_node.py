@@ -103,7 +103,9 @@ class LDS02RRDriver(Node):
         except ValueError:
             return
 
-        idx = int(round(angle_deg)) % TOTAL_SAMPLES
+        # Flip 180°: lidar's physical 0° maps to robot rear (idx 180)
+        # This matches the (180 - angle) remap that was in the old burgerbot lidar.cpp
+        idx = int(round(180.0 - angle_deg)) % TOTAL_SAMPLES
         dist_m = dist_mm / 1000.0
 
         if dist_mm <= 0 or dist_m < self.range_min or dist_m > self.range_max:

@@ -5,7 +5,6 @@
 #include "imu.h"
 #include "odometry.h"
 #include "pid.h"
-#include "lidar.h"
 
 #ifndef USE_MICROROS
 #define USE_MICROROS 0
@@ -25,7 +24,6 @@
 #include <std_msgs/msg/bool.h>
 #include <std_msgs/msg/float32_multi_array.h>
 #include <tf2_msgs/msg/tf_message.h>
-#include <sensor_msgs/msg/laser_scan.h>
 #endif
 
 // ─── PID instances ────────────────────────────────────────
@@ -62,10 +60,6 @@ static nav_msgs__msg__Odometry               g_odom_msg;
 static std_msgs__msg__Bool                   g_imu_status_msg;
 static std_msgs__msg__Bool                   g_mag_status_msg;
 static tf2_msgs__msg__TFMessage              g_tf_msg;
-static rcl_publisher_t                       g_scan_pub;
-static sensor_msgs__msg__LaserScan           g_scan_msg;
-static float g_scan_ranges[360];
-static float g_scan_intensities[360];
 static geometry_msgs__msg__TransformStamped  g_tf_transforms[1];
 static bool     g_ros_time_synced       = false;
 static uint32_t g_last_ros_time_sync_ms = 0;
@@ -106,12 +100,16 @@ inline void setYawQuaternion(geometry_msgs__msg__Quaternion& q, float yaw_rad) {
 void initStandardRosMessages() {
   memset(&g_imu_msg, 0, sizeof(g_imu_msg));
   setRosString(g_imu_msg.header.frame_id, "imu_link");
-  g_imu_msg.orientation_covariance[0] = 0.001;
-  g_imu_msg.orientation_covariance[4] = 0.001;
-  g_imu_msg.orientation_covariance[8] = 0.001;
-  g_imu_msg.angular_velocity_covariance[0]  = 0.02;
-  g_imu_msg.angular_velocity_covariance[4]  = 0.02;
-  g_imu_msg.angular_velocity_covariance[8]  = 0.02;
+  // Increased from 0.001 to let EKF blend odom yaw when robot is stopped
+  // Matched to wheel odometry yaw covariance (0.2) so EKF blends both equally
+  g_imu_msg.orientation_covariance[0] = 0.2;
+  g_imu_msg.orientation_covariance[4] = 0.2;
+  g_imu_msg.orientation_covariance[8] = 0.2;
+  // Raised from 0.02 to match wheel odometry twist angular z covariance (0.2),
+  // preventing gyro residual bias from causing yaw drift at standstill.
+  g_imu_msg.angular_velocity_covariance[0]  = 0.2;
+  g_imu_msg.angular_velocity_covariance[4]  = 0.2;
+  g_imu_msg.angular_velocity_covariance[8]  = 0.2;
   g_imu_msg.linear_acceleration_covariance[0] = 0.2;
   g_imu_msg.linear_acceleration_covariance[4] = 0.2;
   g_imu_msg.linear_acceleration_covariance[8] = 0.2;
@@ -146,20 +144,6 @@ void initStandardRosMessages() {
   setRosString(g_tf_transforms[0].header.frame_id, "odom");
   setRosString(g_tf_transforms[0].child_frame_id,  "base_link");
 
-  // LaserScan static fields — set once, reuse forever.
-  memset(&g_scan_msg, 0, sizeof(g_scan_msg));
-  setRosString(g_scan_msg.header.frame_id, "lidar");   // MUST match your URDF link name
-  g_scan_msg.angle_min       = 0.0f;
-  g_scan_msg.angle_max       = 2.0f * (float)M_PI - (2.0f * (float)M_PI) / 360.0f;
-  g_scan_msg.angle_increment = (2.0f * (float)M_PI) / 360.0f;
-  g_scan_msg.range_min       = 0.12f;
-  g_scan_msg.range_max       = 3.5f;
-  g_scan_msg.ranges.data          = g_scan_ranges;
-  g_scan_msg.ranges.size          = 360;
-  g_scan_msg.ranges.capacity      = 360;
-  g_scan_msg.intensities.data     = g_scan_intensities;
-  g_scan_msg.intensities.size     = 360;
-  g_scan_msg.intensities.capacity = 360;
 }
 
 void cmdVelCallback(const void* msg_in) {
@@ -223,8 +207,6 @@ bool createRosEntities() {
       ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, MagneticField), "/imu/mag") != RCL_RET_OK) return false;
   if (rclc_publisher_init_default(&g_odom_pub, &g_node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/wheel_odom") != RCL_RET_OK) return false;
-  if (rclc_publisher_init_default(&g_scan_pub, &g_node,
-      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "/scan") != RCL_RET_OK) return false;
   if (rclc_publisher_init_default(&g_imu_status_pub, &g_node,
       ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/imu/status/valid") != RCL_RET_OK) return false;
   if (rclc_publisher_init_default(&g_mag_status_pub, &g_node,
@@ -266,7 +248,6 @@ void destroyRosEntities() {
   (void)rcl_subscription_fini(&g_rpm_cmd_sub,       &g_node);
   (void)rcl_subscription_fini(&g_cmd_sub,           &g_node);
   if (PUBLISH_RAW_ODOM_TF) (void)rcl_publisher_fini(&g_tf_pub, &g_node);
-  (void)rcl_publisher_fini(&g_scan_pub,        &g_node);
   (void)rcl_publisher_fini(&g_mag_status_pub,  &g_node);
   (void)rcl_publisher_fini(&g_imu_status_pub,  &g_node);
   (void)rcl_publisher_fini(&g_odom_pub,        &g_node);
@@ -281,26 +262,6 @@ void destroyRosEntities() {
   g_ros_entities_created = false;
 }
 
-// Publish the LaserScan on its own cadence — driven by the lidar, not by
-// the 20 Hz telemetry loop. Called every loop tick; cheap when no scan ready.
-void publishScanIfReady() {
-  if (!g_ros_entities_created) return;
-  if (!lidarScanReady()) return;
-
-  uint32_t scan_start_ms    = 0;
-  uint32_t scan_duration_ms = 200;   // sensible default if first scan
-  lidarGetScan(g_scan_ranges, g_scan_intensities,
-               &scan_start_ms, &scan_duration_ms);
-
-  // header.stamp is the time of the FIRST beam in ranges[], per LaserScan spec.
-  setRosTimeFromMillis(g_scan_msg.header.stamp, scan_start_ms);
-
-  const float scan_time_s = (scan_duration_ms > 0 ? scan_duration_ms : 200) / 1000.0f;
-  g_scan_msg.scan_time      = scan_time_s;
-  g_scan_msg.time_increment = scan_time_s / 360.0f;
-
-  (void)rcl_publish(&g_scan_pub, &g_scan_msg, nullptr);
-}
 
 void publishWheelSpeeds() {
   if (!g_ros_entities_created) return;
@@ -381,7 +342,6 @@ void setup() {
   initI2cAndSensors();
   loadPidGainsFromNvsAndApply();
   loadMagOffsetsFromNvs();
-  initLidar();
   g_last_cmd_ms = millis();
 #if USE_MICROROS
   set_microros_transports();
@@ -429,10 +389,6 @@ void loop() {
     if ((now - g_last_ros_time_sync_ms) >= ROS_TIME_SYNC_PERIOD_MS)
       (void)syncRosClock(100);
     rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(10));
-
-    // Publish the scan as soon as a rotation completes, decoupled from the
-    // 20 Hz telemetry cadence so we don't drop scans when serial gets busy.
-    publishScanIfReady();
 
     if ((now - last_telemetry_ms) >= TELEMETRY_PERIOD_MS) {
       last_telemetry_ms = now;

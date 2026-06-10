@@ -97,7 +97,7 @@ def generate_launch_description():
                 output='screen',
                 parameters=[{
                        'use_mag': False,
-                       'publish_tf': True,
+                       'publish_tf': False,
                        'reverse_tf': False,
                        'fixed_frame': 'base_link',
                        'gain': 0.1,

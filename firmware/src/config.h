@@ -62,24 +62,26 @@ constexpr float ENCODER_PPR             = 11.0f;
 constexpr float GEAR_RATIO              = 18.8f;
 constexpr float ENCODER_EDGE_MULTIPLIER = 1.0f;
 constexpr float COUNTS_PER_OUTPUT_REV   = ENCODER_PPR * GEAR_RATIO * ENCODER_EDGE_MULTIPLIER;
-constexpr float WHEEL_RADIUS_M          = 0.0625f;
+constexpr float WHEEL_RADIUS_M          = 0.0613f;
 constexpr float WHEEL_BASE_M            = 0.282f;
 
 // ─── Timing ───────────────────────────────────────────────
 constexpr uint32_t CONTROL_PERIOD_MS        = 10;
 constexpr uint32_t TELEMETRY_PERIOD_MS      = 50;
 constexpr uint32_t ROS_TIME_SYNC_PERIOD_MS  = 5000;
-constexpr uint32_t CMD_TIMEOUT_MS           = 300;
+constexpr uint32_t CMD_TIMEOUT_MS           = 1000;
 constexpr uint32_t RPM_ESTIMATION_WINDOW_MS = 50;
 constexpr bool     PUBLISH_RAW_ODOM_TF      = false;
 
 // ─── PID defaults ─────────────────────────────────────────
 constexpr float M1_KP = 1.00f;
-constexpr float M1_KI = 0.50f;
+constexpr float M1_KI = 1.00f;
 constexpr float M1_KD = 0.01f;
 constexpr float M2_KP = 1.00f;
-constexpr float M2_KI = 0.50f;
+constexpr float M2_KI = 1.00f;
 constexpr float M2_KD = 0.01f;
+constexpr float FF_GAIN = 0.8f;   // Feed-forward: output += FF * setpoint — small boost for responsiveness
+constexpr int   MIN_PWM_START = 60; // Kickstart PWM to break static friction
 
 // ─── Control tuning ───────────────────────────────────────
 constexpr float SPEED_LPF_ALPHA    = 0.30f;

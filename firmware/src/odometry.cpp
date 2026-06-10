@@ -77,6 +77,13 @@ void runControlStep(uint32_t dt_ms) {
     g_m2_target_rpm = 0.0f;
   }
 
+  // Command-active tracking: must run BEFORE stop_requested return so that
+  // prev_cmd_active is kept accurate even between commands.
+  static bool     prev_cmd_active = false;
+  const bool      cmd_active_now  =
+      fabsf(g_m1_target_rpm) > ZERO_CMD_RPM_EPS ||
+      fabsf(g_m2_target_rpm) > ZERO_CMD_RPM_EPS;
+
   const bool stop_requested =
       (fabsf(g_m1_target_rpm) <= ZERO_CMD_RPM_EPS) &&
       (fabsf(g_m2_target_rpm) <= ZERO_CMD_RPM_EPS);
@@ -84,14 +91,27 @@ void runControlStep(uint32_t dt_ms) {
   if (stop_requested) {
     g_m1_target_rpm = 0.0f;
     g_m2_target_rpm = 0.0f;
-    g_m1_pid.Reset();
-    g_m2_pid.Reset();
+    // Keep PID state — integral persists across timeouts for immediate restart
     stopMotors();
+    prev_cmd_active = false; // ← ensure next command triggers the timed clamp
     return;
   }
 
-  const int m1_pwm = static_cast<int>(g_m1_pid.Update(g_m1_target_rpm, g_m1_measured_rpm, dt_s));
-  const int m2_pwm = static_cast<int>(g_m2_pid.Update(g_m2_target_rpm, g_m2_measured_rpm, dt_s));
+  int m1_pwm = static_cast<int>(g_m1_pid.Update(g_m1_target_rpm, g_m1_measured_rpm, dt_s));
+  int m2_pwm = static_cast<int>(g_m2_pid.Update(g_m2_target_rpm, g_m2_measured_rpm, dt_s));
+
+  // One-shot kickstart: boost both motors to MIN_PWM_START during the first
+  // 200 ms of a new command, just enough to break static friction. After that
+  // the PID runs freely — no persistent clamp or conditional re-engagement.
+  static uint32_t kickstart_ms = 0;
+  if (cmd_active_now && !prev_cmd_active) kickstart_ms = millis();
+  prev_cmd_active = cmd_active_now;
+
+  constexpr uint32_t KICKSTART_DURATION_MS = 200;
+  if (cmd_active_now && (millis() - kickstart_ms) < KICKSTART_DURATION_MS) {
+    if (abs(m1_pwm) < MIN_PWM_START) m1_pwm = (m1_pwm >= 0) ? MIN_PWM_START : -MIN_PWM_START;
+    if (abs(m2_pwm) < MIN_PWM_START) m2_pwm = (m2_pwm >= 0) ? MIN_PWM_START : -MIN_PWM_START;
+  }
 
   applyMotorCommand(1, m1_pwm);
   applyMotorCommand(2, m2_pwm);

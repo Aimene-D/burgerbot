@@ -96,7 +96,7 @@ links:
     assembly: rep
     mass_kg: 1.021548
     volume_m3: 0.00013013
-    bbox_size_m: [0.131000, 0.064618, 0.131000]
+    bbox_size_m: [0.122600, 0.064618, 0.122600]
     com_local_m: [0.000416, 0.003069, 0.001944]
     inertia_at_com:
       ixx: 1.666424e-03
@@ -154,7 +154,7 @@ links:
     assembly: rep
     mass_kg: 1.021548
     volume_m3: 0.00013013
-    bbox_size_m: [0.131000, 0.064618, 0.131000]
+    bbox_size_m: [0.122600, 0.064618, 0.122600]
     com_local_m: [-0.000416, -0.003069, 0.001944]
     inertia_at_com:
       ixx: 1.666424e-03

@@ -5,8 +5,8 @@ static Preferences g_pid_preferences;
 extern PidController g_m1_pid;
 extern PidController g_m2_pid;
 
-PidController::PidController(float kp, float ki, float kd)
-    : kp_(kp), ki_(ki), kd_(kd) {}
+PidController::PidController(float kp, float ki, float kd, float ff)
+    : kp_(kp), ki_(ki), kd_(kd), ff_(ff) {}
 
 void PidController::SetGains(float kp, float ki, float kd) {
   kp_ = kp; ki_ = ki; kd_ = kd;
@@ -15,6 +15,8 @@ void PidController::SetGains(float kp, float ki, float kd) {
 void PidController::GetGains(float& kp, float& ki, float& kd) const {
   kp = kp_; ki = ki_; kd = kd_;
 }
+
+void PidController::SetFeedforward(float ff) { ff_ = ff; }
 
 void PidController::Reset() {
   integral_ = 0.0f;
@@ -33,7 +35,7 @@ float PidController::Update(float setpoint, float measurement, float dt_s) {
   }
   prev_measurement_ = measurement;
   first_run_ = false;
-  float output = (kp_ * error) + (ki_ * integral_) - (kd_ * d_measurement);
+  float output = (kp_ * error) + (ki_ * integral_) - (kd_ * d_measurement) + (ff_ * setpoint);
   output = constrain(output, -static_cast<float>(PWM_MAX), static_cast<float>(PWM_MAX));
   return output;
 }

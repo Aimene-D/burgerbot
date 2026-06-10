@@ -223,7 +223,7 @@
   <joint name="left_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="left_wheel"/>
-    <origin xyz="-0.000000 0.119500 -0.027000" rpy="0.000000 -0.000000 -0.000000"/>
+    <origin xyz="-0.000000 0.141000 -0.027000" rpy="0.000000 -0.000000 -0.000000"/>
     <axis xyz="-0.000000 1.000000 -0.000000"/>
     <limit effort="100.0" velocity="1.00"/>
   </joint>
@@ -231,7 +231,7 @@
   <joint name="right_wheel_joint" type="continuous">
     <parent link="base_link"/>
     <child link="right_wheel"/>
-    <origin xyz="-0.000000 -0.119500 -0.027000" rpy="-0.000000 -0.000000 -0.000000"/>
+    <origin xyz="-0.000000 -0.141000 -0.027000" rpy="-0.000000 -0.000000 -0.000000"/>
     <axis xyz="0.000000 -1.000000 -0.000000"/>
     <limit effort="100.0" velocity="1.00"/>
   </joint>

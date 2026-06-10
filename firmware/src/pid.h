@@ -4,14 +4,15 @@
 
 class PidController {
  public:
-  PidController(float kp, float ki, float kd);
+  PidController(float kp, float ki, float kd, float ff = 1.5f);
   void SetGains(float kp, float ki, float kd);
   void GetGains(float& kp, float& ki, float& kd) const;
+  void SetFeedforward(float ff);
   void Reset();
   float Update(float setpoint, float measurement, float dt_s);
 
  private:
-  float kp_, ki_, kd_;
+  float kp_, ki_, kd_, ff_;
   float integral_       = 0.0f;
   float prev_measurement_ = 0.0f;
   bool  first_run_      = true;
