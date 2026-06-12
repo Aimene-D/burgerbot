@@ -1,0 +1,17 @@
+sauvgarde_map:ros2 run nav2_map_server map_saver_cli -f ~/Documents/PlatformIO/Projects/burgerbot/ros2_ws/src/rep_nav2/maps/ma_carte
+
+telop_key:ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+run_micro_agent : 
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0 -b 921600
+source ~/Documents/PlatformIO/Projects/burgerbot/ros2_ws/installfff/local_setup.bash
+
+run_robot_rviz: ros2 launch rep_description robot_viz.launch.py
+
+run_robot_slam :  ros2 launch rep_nav2 slam.launch.py
+ros2 lifecycle set /slam_toolbox configure
+ros2 lifecycle set /slam_toolbox activate
+
+lds : ros2 launch lds02rr_driver lidar.launch.py port:=/dev/ttyACM0
+
+nav : ros2 launch rep_nav2 nav2.launch.py
