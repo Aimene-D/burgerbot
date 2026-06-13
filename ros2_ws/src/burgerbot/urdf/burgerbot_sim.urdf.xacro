@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="burgerbot">
+
+  <!-- Base geometry: links, joints, visuals, inertials -->
+  <xacro:include filename="$(find burgerbot)/urdf/burgerbot.urdf.xacro"/>
+
+  <!-- ── Differential Drive ────────────────────────────────────────────────
+       Subscribes: /cmd_vel
+       Publishes:  /wheel_odom (Odometry, 50 Hz)
+       publish_odom_tf=false: EKF owns the odom->base_link TF
+       Wheel params match firmware/src/config.h exactly
+  ──────────────────────────────────────────────────────────────────────── -->
+  <gazebo>
+    <plugin name="gz::sim::systems::DiffDrive"
+            filename="gz-sim-diff-drive-system">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.282</wheel_separation>
+      <wheel_radius>0.0625</wheel_radius>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/wheel_odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>false</publish_odom_tf>
+    </plugin>
+  </gazebo>
+
+  <!-- ── GPU LiDAR on 'lidar' link ─────────────────────────────────────────
+       gz_frame_id matches URDF link name -> scan.header.frame_id = 'lidar'
+       Bridged: Gazebo topic 'scan' -> ROS '/scan' via ros_gz_bridge
+  ──────────────────────────────────────────────────────────────────────── -->
+  <gazebo reference="lidar">
+    <sensor name="gpu_lidar" type="gpu_lidar">
+      <always_on>1</always_on>
+      <update_rate>10</update_rate>
+      <topic>scan</topic>
+      <gz_frame_id>lidar</gz_frame_id>
+      <visualize>true</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>3.5</max>
+          <resolution>0.015</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- ── IMU on 'imu_link' ──────────────────────────────────────────────────
+       Bridged: Gazebo 'imu/raw' -> ROS '/imu/raw' via ros_gz_bridge
+       imu_filter_madgwick filters -> /imu/data -> EKF
+  ──────────────────────────────────────────────────────────────────────── -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>50</update_rate>
+      <topic>imu/raw</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>7.5e-6</bias_mean><bias_stddev>8e-7</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>7.5e-6</bias_mean><bias_stddev>8e-7</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev><bias_mean>7.5e-6</bias_mean><bias_stddev>8e-7</bias_stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev><bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+</robot>
