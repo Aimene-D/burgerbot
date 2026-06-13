@@ -4,46 +4,67 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# ── ROS2 Jazzy packages + Gazebo Harmonic ────────────────────────────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Gazebo Harmonic
-    gz-harmonic \
-    ros-jazzy-ros-gz-bridge \
-    ros-jazzy-ros-gz-sim \
-    # Navigation
-    ros-jazzy-nav2-bringup \
-    ros-jazzy-nav2-controller \
-    ros-jazzy-nav2-planner \
-    ros-jazzy-nav2-behaviors \
-    ros-jazzy-nav2-bt-navigator \
-    ros-jazzy-nav2-velocity-smoother \
-    ros-jazzy-nav2-waypoint-follower \
-    ros-jazzy-nav2-lifecycle-manager \
-    ros-jazzy-nav2-map-server \
-    # SLAM + localization
-    ros-jazzy-slam-toolbox \
-    ros-jazzy-robot-localization \
-    ros-jazzy-imu-filter-madgwick \
-    # Micro-ROS + tools
-    ros-jazzy-micro-ros-agent \
-    ros-jazzy-teleop-twist-keyboard \
-    ros-jazzy-rviz2 \
-    # Build tooling
-    python3-colcon-common-extensions \
-    python3-rosdep \
-    && rm -rf /var/lib/apt/lists/*
+# Add Gazebo Harmonic apt repository
+# ros:jazzy-ros-base only ships the ROS2 repo; gz-harmonic lives on osrfoundation
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && curl -fsSL https://packages.osrfoundation.org/gazebo.gpg \
+      -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable noble main" \
+      > /etc/apt/sources.list.d/gazebo-stable.list \
+ && rm -rf /var/lib/apt/lists/*
 
-# ── Workspace ─────────────────────────────────────────────────────────────
+# ROS2 Jazzy + Gazebo Harmonic packages
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      gz-harmonic \
+      ros-jazzy-ros-gz-bridge \
+      ros-jazzy-ros-gz-sim \
+      ros-jazzy-nav2-bringup \
+      ros-jazzy-nav2-controller \
+      ros-jazzy-nav2-planner \
+      ros-jazzy-nav2-behaviors \
+      ros-jazzy-nav2-bt-navigator \
+      ros-jazzy-nav2-velocity-smoother \
+      ros-jazzy-nav2-waypoint-follower \
+      ros-jazzy-nav2-lifecycle-manager \
+      ros-jazzy-nav2-map-server \
+      ros-jazzy-slam-toolbox \
+      ros-jazzy-robot-localization \
+      ros-jazzy-imu-filter-madgwick \
+      ros-jazzy-teleop-twist-keyboard \
+      ros-jazzy-rviz2 \
+      python3-colcon-common-extensions \
+      python3-rosdep \
+      python3-serial \
+      python3-vcstool \
+      git \
+ && rm -rf /var/lib/apt/lists/*
+
+# micro-ROS Agent: no deb package for Jazzy, build from source via micro_ros_setup
+RUN . /opt/ros/jazzy/setup.sh \
+ && rosdep update --rosdistro jazzy \
+ && mkdir -p /opt/uros_ws/src \
+ && git clone -b jazzy https://github.com/micro-ROS/micro_ros_setup.git \
+      /opt/uros_ws/src/micro_ros_setup \
+ && cd /opt/uros_ws \
+ && apt-get update \
+ && rosdep install --from-paths src --ignore-src -y \
+ && colcon build --packages-select micro_ros_setup \
+ && . install/local_setup.sh \
+ && ros2 run micro_ros_setup create_agent_ws.sh \
+ && ros2 run micro_ros_setup build_agent.sh \
+ && rm -rf /var/lib/apt/lists/* /opt/uros_ws/build /opt/uros_ws/log
+
+# Workspace
 WORKDIR /ros2_ws
 COPY ros2_ws/src ./src/
 
-RUN bash -c "\
-    source /opt/ros/jazzy/setup.bash && \
-    colcon build \
+RUN . /opt/ros/jazzy/setup.sh \
+ && colcon build \
       --symlink-install \
-      --cmake-args -DCMAKE_BUILD_TYPE=Release"
+      --cmake-args -DCMAKE_BUILD_TYPE=Release
 
-# ── Entrypoint ─────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

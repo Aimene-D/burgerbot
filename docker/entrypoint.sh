@@ -4,6 +4,11 @@ set -e
 # ROS2 Jazzy base
 source /opt/ros/jazzy/setup.bash
 
+# micro-ROS Agent workspace (built from source in image)
+if [ -f /opt/uros_ws/agent_ws/install/setup.bash ]; then
+  source /opt/uros_ws/agent_ws/install/setup.bash
+fi
+
 # Workspace overlay
 if [ -f /ros2_ws/install/setup.bash ]; then
   source /ros2_ws/install/setup.bash
