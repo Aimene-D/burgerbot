@@ -11,7 +11,6 @@
   <xacro:property name="lidar_x"          value="-0.032"/>
   <xacro:property name="lidar_z"          value="0.171"/>
   <xacro:property name="imu_z"            value="0.050"/>
-  <xacro:property name="pi"               value="3.14159265358979"/>
 
   <!-- ── Materials ── -->
   <material name="chassis_grey"><color rgba="0.65 0.65 0.65 1.0"/></material>
