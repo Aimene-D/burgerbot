@@ -23,7 +23,13 @@ function _colcon_prefix_chain_powershell_source_script {
 
 # source chained prefixes
 _colcon_prefix_chain_powershell_source_script "/opt/ros/jazzy\local_setup.ps1"
-_colcon_prefix_chain_powershell_source_script "/home/aimen/Documents/PlatformIO/Projects/burgerbot/ros2_ws/install\local_setup.ps1"
+# Resolve ros2_ws/install relative to this script's location (portable fix)
+$_bbWsInstall = Join-Path $PSScriptRoot ".." "ros2_ws" "install"
+$_bbWsInstall = try { (Resolve-Path $_bbWsInstall -ErrorAction Stop).Path } catch { $null }
+if ($_bbWsInstall -and (Test-Path $_bbWsInstall)) {
+  _colcon_prefix_chain_powershell_source_script "$_bbWsInstall\local_setup.ps1"
+}
+Remove-Variable _bbWsInstall
 
 # source this prefix
 $env:COLCON_CURRENT_PREFIX=(Split-Path $PSCommandPath -Parent)

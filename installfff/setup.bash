@@ -21,9 +21,13 @@ _colcon_prefix_chain_bash_source_script() {
 # setting COLCON_CURRENT_PREFIX avoids determining the prefix in the sourced script
 COLCON_CURRENT_PREFIX="/opt/ros/jazzy"
 _colcon_prefix_chain_bash_source_script "$COLCON_CURRENT_PREFIX/local_setup.bash"
-# setting COLCON_CURRENT_PREFIX avoids determining the prefix in the sourced script
-COLCON_CURRENT_PREFIX="/home/aimen/Documents/PlatformIO/Projects/burgerbot/ros2_ws/install"
-_colcon_prefix_chain_bash_source_script "$COLCON_CURRENT_PREFIX/local_setup.bash"
+# Resolve ros2_ws/install relative to this script's location (portable fix)
+_bb_ws_install="$(builtin cd "$(dirname "${BASH_SOURCE[0]}")/../ros2_ws/install" > /dev/null 2>&1 && pwd)"
+if [ -n "$_bb_ws_install" ] && [ -d "$_bb_ws_install" ]; then
+  COLCON_CURRENT_PREFIX="$_bb_ws_install"
+  _colcon_prefix_chain_bash_source_script "$COLCON_CURRENT_PREFIX/local_setup.bash"
+fi
+unset _bb_ws_install
 
 # source this prefix
 # setting COLCON_CURRENT_PREFIX avoids determining the prefix in the sourced script
