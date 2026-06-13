@@ -5,6 +5,7 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -17,7 +18,9 @@ def generate_launch_description():
     bridge_cfg = PathJoinSubstitution([pkg, 'config', 'ros_gz_bridge.yaml'])
     ekf_cfg    = PathJoinSubstitution([pkg, 'config', 'ekf.yaml'])
 
-    robot_description = {'robot_description': Command(['xacro ', urdf_sim])}
+    robot_description = {
+        'robot_description': ParameterValue(Command(['xacro ', urdf_sim]), value_type=str)
+    }
 
     return LaunchDescription([
         DeclareLaunchArgument(

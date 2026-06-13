@@ -5,6 +5,7 @@ from launch.substitutions import (
 )
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -15,7 +16,9 @@ def generate_launch_description():
     lidar_port   = LaunchConfiguration('lidar_port')
 
     urdf_xacro = PathJoinSubstitution([pkg, 'urdf', 'burgerbot.urdf.xacro'])
-    robot_description = {'robot_description': Command(['xacro ', urdf_xacro])}
+    robot_description = {
+        'robot_description': ParameterValue(Command(['xacro ', urdf_xacro]), value_type=str)
+    }
 
     return LaunchDescription([
         DeclareLaunchArgument(
