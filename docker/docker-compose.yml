@@ -1,0 +1,54 @@
+version: "3.8"
+
+x-burgerbot: &base
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  network_mode: host
+  ipc: host
+  environment:
+    - ROS_DOMAIN_ID=0
+
+services:
+
+  # ── CLI shell, no display ─────────────────────────────────────────────────
+  headless:
+    <<: *base
+    container_name: burgerbot_headless
+    stdin_open: true
+    tty: true
+
+  # ── Gazebo + RViz2, requires X11 on host ─────────────────────────────────
+  # Linux: run `xhost +local:docker` before starting
+  # WSL2 on Windows: configure WSLg or VcXsrv and set DISPLAY
+  sim:
+    <<: *base
+    container_name: burgerbot_sim
+    stdin_open: true
+    tty: true
+    environment:
+      - ROS_DOMAIN_ID=0
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot sim_nav.launch.py"
+
+  # ── Real robot: access /dev/ttyACM* for ESP32 + LiDAR ─────────────────
+  robot:
+    <<: *base
+    container_name: burgerbot_robot
+    stdin_open: true
+    tty: true
+    privileged: true
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev/ttyACM1:/dev/ttyACM1
+    volumes:
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot slam_nav.launch.py"
