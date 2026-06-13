@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import (
     LaunchConfiguration, Command, PathJoinSubstitution
 )
@@ -22,15 +23,28 @@ def generate_launch_description():
         'robot_description': ParameterValue(Command(['xacro ', urdf_sim]), value_type=str)
     }
 
+    headless = LaunchConfiguration('headless')
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time', default_value='true',
             description='Use Gazebo simulation clock (keep true for simulation)'),
+        DeclareLaunchArgument(
+            'headless', default_value='true',
+            description='Run Gazebo server only (no GUI). Set false to open Gazebo window.'),
 
         # ── 1. Gazebo Harmonic ────────────────────────────────────────────
+        # headless=true  → -s flag: server only, no Qt/X11 required (Docker default)
+        # headless=false → GUI mode, requires DISPLAY to be set
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-s', '-r', world_file],
+            output='screen',
+            condition=IfCondition(headless),
+        ),
         ExecuteProcess(
             cmd=['gz', 'sim', '-r', world_file],
             output='screen',
+            condition=UnlessCondition(headless),
         ),
 
         # ── 2. Robot State Publisher: URDF -> /robot_description + static TF
