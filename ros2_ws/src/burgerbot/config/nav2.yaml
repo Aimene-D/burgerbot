@@ -62,11 +62,11 @@ behavior_server:
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "wait"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     backup:
-      plugin: "nav2_behaviors/BackUp"
+      plugin: "nav2_behaviors::BackUp"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"
     global_frame: odom
     robot_base_frame: base_link
     transform_tolerance: 0.1
@@ -85,9 +85,9 @@ bt_navigator:
     wait_for_service_timeout: 1000
     navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:
-      plugin: "nav2_bt_navigator/NavigateToPoseNavigator"
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
     navigate_through_poses:
-      plugin: "nav2_bt_navigator/NavigateThroughPosesNavigator"
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
 
 velocity_smoother:
   ros__parameters:
