@@ -24,7 +24,10 @@ if [[ -n "$CONDA_PREFIX" || "$PATH" == */conda* || "$PATH" == */miniconda* ]]; t
     CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' \
         | grep -Ev "/(mini)?conda|/anaconda" \
         | tr '\n' ':' | sed 's/:$//')"
-    PYTHONPATH="" PATH="$CLEAN_PATH" \
+    # Do NOT clear PYTHONPATH — source setup.bash added the ROS2 site-packages
+    # (ament_package, catkin_pkg, etc.) to it. We only need PATH clean so that
+    # conda's python3 binary isn't invoked directly; cmake is pinned explicitly.
+    PATH="$CLEAN_PATH" \
         colcon build --symlink-install --cmake-args \
             -DCMAKE_BUILD_TYPE=Release \
             -DPython3_EXECUTABLE=/usr/bin/python3 \
