@@ -15,6 +15,9 @@ if [ -f /ros2_ws/install/setup.bash ]; then
 fi
 
 # Gazebo resource path
-export GZ_SIM_RESOURCE_PATH=/ros2_ws/install/burgerbot/share/burgerbot/worlds
+#   - .../share          : lets Gazebo resolve package://burgerbot/... mesh URIs
+#                          (package://burgerbot/meshes/rep/*.dae in the URDF)
+#   - .../share/.../worlds: models referenced from the world file
+export GZ_SIM_RESOURCE_PATH=/ros2_ws/install/burgerbot/share:/ros2_ws/install/burgerbot/share/burgerbot/worlds${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}
 
 exec "$@"
