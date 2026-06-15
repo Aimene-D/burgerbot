@@ -37,15 +37,24 @@ echo "==> Building workspace..."
 source /opt/ros/jazzy/setup.bash
 cd "$SCRIPT_DIR/../ros2_ws"
 
-# Conda intercepts python3, making cmake use its Python instead of the system
-# one that has catkin_pkg. Strip conda paths for the duration of the build.
+# Conda's python3 intercepts cmake's Python discovery in two ways:
+#   a) it appears first in PATH  → fixed by stripping conda from PATH
+#   b) cmake caches the path in build/*/CMakeCache.txt from a previous run
+#      → cmake reads the absolute cached path directly, ignoring PATH entirely
+# Fix: clear every CMakeCache.txt so cmake re-discovers python3, AND strip
+# conda from PATH, AND pin Python3_EXECUTABLE explicitly via cmake args.
 if [[ -n "$CONDA_PREFIX" || "$PATH" == */conda* || "$PATH" == */miniconda* ]]; then
-    echo "    (conda detected — using system python3 for the build)"
+    echo "    (conda detected — clearing cmake cache and pinning system python3)"
+    find build/ -name "CMakeCache.txt" -delete 2>/dev/null || true
+
     CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' \
         | grep -Ev "/(mini)?conda|/anaconda" \
         | tr '\n' ':' | sed 's/:$//')"
     PYTHONPATH="" PATH="$CLEAN_PATH" \
-        colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+        colcon build --symlink-install --cmake-args \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE=/usr/bin/python3 \
+            -DPYTHON_EXECUTABLE=/usr/bin/python3
 else
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 fi

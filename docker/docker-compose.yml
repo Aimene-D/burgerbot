@@ -69,7 +69,7 @@ services:
     container_name: burgerbot_foxglove
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
-               ros2 launch foxglove_bridge foxglove_bridge.launch.xml"
+               ros2 launch foxglove_bridge foxglove_bridge"
 
   # rqt GUI — node graph, topic inspector, TF tree, log console, plots.
   # Needs a display: run via docker-compose.devmachine.yml on your Windows
