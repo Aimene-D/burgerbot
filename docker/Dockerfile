@@ -41,20 +41,8 @@ RUN apt-get update \
       git \
  && rm -rf /var/lib/apt/lists/*
 
-# micro-ROS Agent: no deb package for Jazzy, build from source via micro_ros_setup
-RUN . /opt/ros/jazzy/setup.sh \
- && rosdep update --rosdistro jazzy \
- && mkdir -p /opt/uros_ws/src \
- && git clone -b jazzy https://github.com/micro-ROS/micro_ros_setup.git \
-      /opt/uros_ws/src/micro_ros_setup \
- && cd /opt/uros_ws \
- && apt-get update \
- && rosdep install --from-paths src --ignore-src -y \
- && colcon build --packages-select micro_ros_setup \
- && . install/local_setup.sh \
- && ros2 run micro_ros_setup create_agent_ws.sh \
- && ros2 run micro_ros_setup build_agent.sh \
- && rm -rf /var/lib/apt/lists/* /opt/uros_ws/build /opt/uros_ws/log
+# micro-ROS Agent runs as a separate container (microros/micro-ros-agent:jazzy)
+# via docker-compose — no local build needed.
 
 # Workspace
 WORKDIR /ros2_ws

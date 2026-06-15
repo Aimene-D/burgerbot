@@ -121,28 +121,58 @@ services:
   #  Physical robot — needs the ESP32 + LiDAR on /dev/ttyACM*
   # ════════════════════════════════════════════════════════════════════════
 
-  # Sensors only: micro-ROS agent, robot_state_publisher, LiDAR, IMU filter, EKF.
+  # micro-ROS agent: bridges the ESP32 (ttyACM0) into the ROS 2 graph.
+  # Runs as a standalone container using the official micro-ROS image so
+  # no local installation is needed. Start it before bringup/robot, or
+  # let depends_on handle ordering automatically.
+  #   docker compose -f docker/docker-compose.yml run --rm micro-ros-agent
+  micro-ros-agent:
+    image: microros/micro-ros-agent:jazzy
+    container_name: burgerbot_micro_ros_agent
+    network_mode: host
+    privileged: true
+    volumes:
+      - /dev:/dev
+    command: serial --dev /dev/ttyACM0 -b 921600
+    restart: unless-stopped
+
+  # Sensors only: robot_state_publisher, LiDAR, IMU filter, EKF.
+  # micro-ROS agent runs as its own container (see micro-ros-agent above).
   # No autonomy — good for verifying hardware before adding SLAM/Nav2.
   #   docker compose -f docker/docker-compose.yml run --rm bringup
   bringup:
     <<: *base
     container_name: burgerbot_bringup
+    depends_on:
+      - micro-ros-agent
     privileged: true
     devices:
-      - /dev/ttyACM0:/dev/ttyACM0
       - /dev/ttyACM1:/dev/ttyACM1
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 launch burgerbot bringup.launch.py"
+
+  # Real-robot SLAM only (no Nav2). Pair with `bringup` running in another
+  # terminal. Visualise from your dev machine with docker-compose.devmachine.yml.
+  #   docker compose -f docker/docker-compose.yml run --rm slam
+  slam:
+    <<: *base
+    container_name: burgerbot_slam
+    volumes:
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot slam.launch.py"
 
   # Full robot: bringup + SLAM + Nav2 (map while navigating).
   #   docker compose -f docker/docker-compose.yml run --rm robot
   robot:
     <<: *base
     container_name: burgerbot_robot
+    depends_on:
+      - micro-ros-agent
     privileged: true
     devices:
-      - /dev/ttyACM0:/dev/ttyACM0
       - /dev/ttyACM1:/dev/ttyACM1
     volumes:
       - ${HOME}/maps:/root/maps

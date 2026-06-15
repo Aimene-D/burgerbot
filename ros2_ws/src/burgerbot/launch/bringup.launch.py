@@ -12,7 +12,6 @@ def generate_launch_description():
     pkg = FindPackageShare('burgerbot')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
-    serial_port  = LaunchConfiguration('serial_port')
     lidar_port   = LaunchConfiguration('lidar_port')
 
     urdf_xacro = PathJoinSubstitution([pkg, 'urdf', 'burgerbot.urdf.xacro'])
@@ -25,20 +24,8 @@ def generate_launch_description():
             'use_sim_time', default_value='false',
             description='Use simulation clock'),
         DeclareLaunchArgument(
-            'serial_port', default_value='/dev/ttyACM0',
-            description='Serial port for micro-ROS agent (ESP32)'),
-        DeclareLaunchArgument(
             'lidar_port', default_value='/dev/ttyACM1',
             description='Serial port for LDS02RR LiDAR'),
-
-        # ── micro-ROS agent: bridges ESP32 <-> ROS 2 ──────────────────────
-        Node(
-            package='micro_ros_agent',
-            executable='micro_ros_agent',
-            name='micro_ros_agent',
-            arguments=['serial', '--dev', serial_port, '-b', '115200'],
-            output='screen',
-        ),
 
         # ── Robot state publisher: URDF -> /tf static transforms ──────────
         Node(
