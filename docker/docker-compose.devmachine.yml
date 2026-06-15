@@ -1,0 +1,67 @@
+# Dev machine RViz — connect to the remote robot's ROS 2 graph from Windows.
+#
+# ── Prerequisites ───────────────────────────────────────────────────────────
+#
+# 1. Docker Desktop installed with the WSL2 backend (recommended on Windows 11).
+#
+# 2. WSL2 mirrored networking (Windows 11 22H2+ only).
+#    Without it, network_mode:host attaches to the WSL2 VM's private subnet
+#    instead of your LAN, and DDS cannot reach the robot.
+#
+#    Enable once — add these lines to %USERPROFILE%\.wslconfig:
+#        [wsl2]
+#        networkingMode=mirrored
+#    Then restart WSL2:
+#        wsl --shutdown
+#
+# 3. Set ROBOT_IP to the robot's LAN address before every run:
+#        PowerShell:  $env:ROBOT_IP = "192.168.x.x"
+#        cmd.exe:     set ROBOT_IP=192.168.x.x
+#
+# 4. Display (GUI for RViz):
+#    • Windows 11 with WSLg (default):  DISPLAY=:0  ← already set below, nothing extra needed.
+#    • Windows 10 / no WSLg:            install VcXsrv, launch it with
+#      "Disable access control" checked, then override:
+#          set DISPLAY=host.docker.internal:0.0
+#      and comment-out the /tmp/.X11-unix volume mount below.
+#
+# ── Build (once, or after code changes) ────────────────────────────────────
+#   docker compose -f docker/docker-compose.devmachine.yml build
+#
+# ── Run ─────────────────────────────────────────────────────────────────────
+#   docker compose -f docker/docker-compose.devmachine.yml run --rm rviz
+#
+# On the robot, make sure these are running first:
+#   docker compose -f docker/docker-compose.yml run --rm bringup
+#   docker compose -f docker/docker-compose.yml run --rm slam
+
+services:
+  rviz:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: burgerbot:latest
+    # host networking lets Cyclone DDS reach the robot on your LAN.
+    # Requires WSL2 mirrored networking on Windows 11 (see above).
+    network_mode: host
+    ipc: host
+    stdin_open: true
+    tty: true
+    environment:
+      - ROS_DOMAIN_ID=0
+      # ROBOT_IP must be set in your shell before running (see Prerequisites).
+      - ROBOT_IP=${ROBOT_IP:?Set ROBOT_IP to the robot LAN IP, e.g. 192.168.1.42}
+      # Tells Cyclone DDS to probe ROBOT_IP directly instead of relying on
+      # multicast (which most Wi-Fi access points block).
+      - CYCLONEDDS_URI=file:///cyclone_peers.xml
+      # WSLg sets DISPLAY=:0 automatically; VcXsrv users override this.
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      # DDS peer config — bind-mounted so you can change ROBOT_IP without rebuild.
+      - ./cyclone_peers.xml:/cyclone_peers.xml:ro
+      # X11 socket for WSLg. Comment this out if using VcXsrv over TCP.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot debug.launch.py"

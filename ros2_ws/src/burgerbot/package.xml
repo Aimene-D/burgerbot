@@ -22,7 +22,6 @@
   <exec_depend>nav2_velocity_smoother</exec_depend>
   <exec_depend>nav2_waypoint_follower</exec_depend>
   <exec_depend>nav2_lifecycle_manager</exec_depend>
-  <exec_depend>micro_ros_agent</exec_depend>
   <exec_depend>lds02rr_driver</exec_depend>
   <!-- Gazebo Harmonic simulation -->
   <exec_depend>ros_gz_sim</exec_depend>

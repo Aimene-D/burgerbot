@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cyclone DDS unicast peer discovery — for cross-machine ROS 2 (Jazzy).
+
+  Used by scripts/connect_rviz.sh on your local dev machine to reach the robot.
+  Needed when the network blocks UDP multicast (most WiFi access points do).
+
+  Usage (the script handles this automatically):
+      export ROBOT_IP=192.168.x.x
+      export CYCLONEDDS_URI=file:///path/to/docker/cyclone_peers.xml
+      export ROS_DOMAIN_ID=0
+      ros2 launch burgerbot debug.launch.py
+
+  Cyclone DDS expands ${ROBOT_IP} from the environment at startup.
+-->
+<CycloneDDS>
+  <Domain>
+    <Discovery>
+      <Peers>
+        <Peer address="${ROBOT_IP}"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
