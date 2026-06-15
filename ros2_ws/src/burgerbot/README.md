@@ -1,61 +1,33 @@
 # burgerbot
 
-ROS 2 Jazzy package for the burgerbot differential-drive robot. Runs on Ubuntu 24.04 natively or in Docker (no local ROS 2 required).
+ROS 2 Jazzy package for the burgerbot differential-drive robot.
+Tested on Ubuntu 24.04 (Noble) — native install or Docker.
 
-> See [ARCHITECTURE.md](ARCHITECTURE.md) for a full explanation of how the stack works.
+> See [ARCHITECTURE.md](ARCHITECTURE.md) for system design and Mermaid diagrams.
 
 ---
 
 ## Quick-Start Options
 
 | Situation | Path |
-|-----------|------|
-| No ROS 2 installed | [Docker](#docker) |
+| --------- | ---- |
 | Ubuntu 24.04, bare metal | [Native Install](#native-install) |
+| Any machine, no ROS 2 needed | [Docker](#docker) |
 | Just want to simulate | [Gazebo Simulation](#gazebo-simulation) |
 | Physical robot | [Hardware Bringup](#hardware-bringup) |
 
 ---
 
-## Docker
-
-### Prerequisites
-- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
-- For GUI (Gazebo/RViz) on Linux: X11 running
-
-### Build the image
-
-```bash
-cd burgerbot
-docker compose -f docker/docker-compose.yml build
-```
-
-### Run
-
-```bash
-# Gazebo + SLAM + Nav2 (simulation, GUI via X11)
-docker compose -f docker/docker-compose.yml run sim
-
-# Physical robot with SLAM (requires /dev/ttyACM0 + /dev/ttyACM1)
-docker compose -f docker/docker-compose.yml run robot
-
-# Headless CLI session
-docker compose -f docker/docker-compose.yml run headless bash
-```
-
-> **Windows GUI note:** Docker GUI (Gazebo/RViz) requires an X server such as VcXsrv or WSLg. Set `DISPLAY=host.docker.internal:0` before running the `sim` service.
-
----
-
 ## Native Install
 
-### 1. Install dependencies (Ubuntu 24.04 only)
+### 1. Install dependencies
 
 ```bash
 bash scripts/install_deps.sh
 ```
 
-This adds the ROS 2 Jazzy and Gazebo Harmonic apt repos and installs all required packages.
+Adds ROS 2 Jazzy and Gazebo Harmonic apt repos and installs all required packages.
+Run once on a fresh Ubuntu 24.04 machine.
 
 ### 2. Build the workspace
 
@@ -66,43 +38,99 @@ bash scripts/build.sh
 ### 3. Source the workspace
 
 ```bash
-# bash
-source installfff/setup.bash
-
-# zsh
-source installfff/setup.zsh
-
-# plain sh
-. installfff/setup.sh
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
 ```
 
-> The `installfff/` scripts are portable — they resolve the workspace path relative to their own location, so they work from any clone location.
+Add both lines to `~/.bashrc` to avoid re-sourcing every terminal.
+
+---
+
+## Docker
+
+### Prerequisites
+
+- Docker Engine: `sudo apt install docker.io docker-compose-plugin`
+- Add yourself to the docker group: `sudo usermod -aG docker $USER` (then log out/in)
+
+### Build
+
+```bash
+cd burgerbot
+docker compose -f docker/docker-compose.yml build
+```
+
+> First build takes ~15 minutes — micro-ROS agent is compiled from source.
+> Subsequent builds are cached.
+
+### Run: simulation (headless, no display needed)
+
+```bash
+docker compose -f docker/docker-compose.yml run sim
+```
+
+Gazebo runs in server-only mode (`-s`) by default — no GUI, no X11 required.
+All ROS 2 topics are available on the host via `network_mode: host`.
+
+### Run: simulation with Gazebo GUI
+
+```bash
+xhost +local:docker
+docker compose -f docker/docker-compose.yml run sim \
+  bash -c "source /ros2_ws/install/setup.bash && ros2 launch burgerbot sim_nav.launch.py headless:=false"
+```
+
+### Run: physical robot
+
+```bash
+docker compose -f docker/docker-compose.yml run robot
+```
+
+Requires `/dev/ttyACM0` (ESP32) and `/dev/ttyACM1` (LiDAR) connected.
+
+### Run: headless CLI shell
+
+```bash
+docker compose -f docker/docker-compose.yml run headless bash
+```
 
 ---
 
 ## Launch Files
 
-All launch files live in `launch/`. Each one accepts `use_sim_time:=true/false`.
+All launch files are in `launch/`. Each accepts `use_sim_time:=true/false`.
 
-### Atomic launchers (single concern)
+### Atomic launchers
 
 | File | What it starts |
-|------|----------------|
+| ---- | -------------- |
 | `bringup.launch.py` | micro-ROS agent, robot_state_publisher, LiDAR driver, IMU filter, EKF |
 | `slam.launch.py` | SLAM Toolbox (async mapping mode) |
-| `localization.launch.py` | SLAM Toolbox (localization mode) — requires `map:=<path>` |
+| `localization.launch.py` | SLAM Toolbox (localization on saved map) — requires `map:=<path>` |
 | `navigation.launch.py` | Full Nav2 stack |
 | `debug.launch.py` | RViz2 with pre-configured display |
 | `gazebo.launch.py` | Gazebo Harmonic, robot spawn, ros_gz_bridge, IMU filter, EKF |
 
-### Compound launchers (full workflows)
+### Compound launchers
 
-| File | What it includes | Use case |
-|------|-----------------|----------|
+| File | Includes | Use case |
+| ---- | -------- | -------- |
 | `slam_nav.launch.py` | bringup + slam + navigation | Hardware: map while navigating |
-| `nav_saved_map.launch.py` | bringup + localization + navigation | Hardware: navigate on a saved map |
-| `sim_slam.launch.py` | gazebo + slam | Simulation: mapping run |
-| `sim_nav.launch.py` | gazebo + slam + navigation | Simulation: full autonomous nav |
+| `nav_saved_map.launch.py` | bringup + localization + navigation | Hardware: navigate saved map |
+| `sim_slam.launch.py` | gazebo + slam | Sim: mapping run |
+| `sim_nav.launch.py` | gazebo + slam + navigation | Sim: full autonomous navigation |
+
+### Gazebo headless vs GUI
+
+`gazebo.launch.py` (and all `sim_*.launch.py`) accept a `headless` argument:
+
+```bash
+# Default: server only, no display required
+ros2 launch burgerbot sim_nav.launch.py headless:=true
+
+# Open Gazebo GUI (requires DISPLAY)
+ros2 launch burgerbot sim_nav.launch.py headless:=false
+```
 
 ---
 
@@ -110,10 +138,16 @@ All launch files live in `launch/`. Each one accepts `use_sim_time:=true/false`.
 
 ### Connections
 
-| Device | Default port | Launch arg |
-|--------|-------------|-----------|
-| ESP32-S3 (firmware) | `/dev/ttyACM0` | `serial_port:=` |
+| Device | Default port | Override arg |
+| ------ | ------------ | ------------ |
+| ESP32-S3 (micro-ROS firmware) | `/dev/ttyACM0` | `serial_port:=` |
 | LDS02RR LiDAR | `/dev/ttyACM1` | `lidar_port:=` |
+
+Add your user to the dialout group if you get serial port permission errors:
+
+```bash
+sudo usermod -aG dialout $USER
+```
 
 ### Map while navigating (SLAM + Nav2)
 
@@ -127,7 +161,7 @@ Open RViz in a second terminal:
 ros2 launch burgerbot debug.launch.py
 ```
 
-Save map when done:
+Save the map when done exploring:
 
 ```bash
 ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
@@ -139,7 +173,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
 ros2 launch burgerbot nav_saved_map.launch.py map:=~/maps/my_map
 ```
 
-> `map` is the path **without extension** — SLAM Toolbox appends `.yaml` and `.posegraph` automatically.
+`map` is the path **without extension** — SLAM Toolbox appends `.yaml` and `.posegraph`.
 
 ### Hardware-only bringup (no autonomy)
 
@@ -147,7 +181,7 @@ ros2 launch burgerbot nav_saved_map.launch.py map:=~/maps/my_map
 ros2 launch burgerbot bringup.launch.py
 ```
 
-Drive manually:
+Manual driving:
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
@@ -157,9 +191,9 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ## Gazebo Simulation
 
-No physical hardware needed. Simulates LiDAR, IMU, and differential drive inside a 6×6 m room.
+No hardware needed. Simulates LiDAR, IMU, and differential drive in a 6×6 m room.
 
-### SLAM mapping in simulation
+### Mapping in simulation
 
 ```bash
 ros2 launch burgerbot sim_slam.launch.py
@@ -171,13 +205,22 @@ ros2 launch burgerbot sim_slam.launch.py
 ros2 launch burgerbot sim_nav.launch.py
 ```
 
-### Debug overlay (RViz)
+### Expected startup sequence
 
-```bash
-ros2 launch burgerbot debug.launch.py use_sim_time:=true
-```
+The stack takes ~20 seconds to fully initialize:
 
-Send a goal via RViz **2D Nav Goal** tool or:
+1. Gazebo world loads and starts physics
+2. Robot spawns, clock starts flowing via bridge
+3. EKF starts once `/clock` arrives → publishes `odom→base_link`
+4. SLAM Toolbox processes first `/scan` → publishes `map→odom`
+5. Nav2 global costmap gets `map` TF — all warnings clear
+
+`Timed out waiting for transform` warnings during the first ~20 s are normal.
+If they persist past 60 s, check the topics below.
+
+### Send a navigation goal
+
+Via RViz **2D Nav Goal** tool, or:
 
 ```bash
 ros2 topic pub /goal_pose geometry_msgs/PoseStamped \
@@ -189,32 +232,32 @@ ros2 topic pub /goal_pose geometry_msgs/PoseStamped \
 
 ## Package Structure
 
-```
+```text
 ros2_ws/src/burgerbot/
 ├── config/
-│   ├── ekf.yaml                    # robot_localization EKF (wheel_odom + imu/data)
-│   ├── nav2.yaml                   # Nav2 stack (controller, planner, BT navigator)
-│   ├── slam_toolbox.yaml           # SLAM Toolbox — async mapping
-│   ├── slam_toolbox_localization.yaml  # SLAM Toolbox — localization mode
-│   ├── ros_gz_bridge.yaml          # Gazebo ↔ ROS 2 topic bridge
-│   └── rviz/burgerbot.rviz         # RViz display config
+│   ├── ekf.yaml                       # EKF (fuses /wheel_odom + /imu/data)
+│   ├── nav2.yaml                      # Nav2 controller, planner, costmaps
+│   ├── slam_toolbox.yaml              # SLAM Toolbox — mapping mode
+│   ├── slam_toolbox_localization.yaml # SLAM Toolbox — localization mode
+│   ├── ros_gz_bridge.yaml             # Gazebo <-> ROS 2 topic bridge
+│   └── rviz/burgerbot.rviz            # RViz layout
 ├── launch/
-│   ├── bringup.launch.py           # hardware sensors + EKF
+│   ├── bringup.launch.py
 │   ├── slam.launch.py
 │   ├── localization.launch.py
 │   ├── navigation.launch.py
 │   ├── debug.launch.py
-│   ├── gazebo.launch.py            # Gazebo sim equivalent of bringup
-│   ├── slam_nav.launch.py          # compound: bringup + slam + nav
-│   ├── nav_saved_map.launch.py     # compound: bringup + localization + nav
-│   ├── sim_slam.launch.py          # compound: gazebo + slam
-│   └── sim_nav.launch.py           # compound: gazebo + slam + nav
-├── maps/                           # drop saved maps here
+│   ├── gazebo.launch.py               # headless arg (default true)
+│   ├── slam_nav.launch.py
+│   ├── nav_saved_map.launch.py
+│   ├── sim_slam.launch.py
+│   └── sim_nav.launch.py
+├── maps/                              # drop saved maps here
 ├── urdf/
-│   ├── burgerbot.urdf.xacro        # physical robot description
-│   └── burgerbot_sim.urdf.xacro   # + Gazebo plugin elements
+│   ├── burgerbot.urdf.xacro           # physical robot description
+│   └── burgerbot_sim.urdf.xacro      # + Gazebo plugin elements
 └── worlds/
-    └── burgerbot_world.sdf         # 6×6 m test room
+    └── burgerbot_world.sdf            # 6x6 m test room
 ```
 
 ---
@@ -222,43 +265,59 @@ ros2_ws/src/burgerbot/
 ## Robot Parameters
 
 | Parameter | Value | Source |
-|-----------|-------|--------|
-| Wheel radius | 0.0625 m | firmware |
-| Wheel separation | 0.282 m | firmware |
-| Robot radius | 0.105 m | nav2.yaml |
-| LiDAR frame | `lidar` | lds02rr_driver |
+| --------- | ----- | ------ |
+| Wheel radius | 0.0625 m | firmware config.h |
+| Wheel separation | 0.282 m | firmware config.h |
+| Robot radius (Nav2) | 0.105 m | nav2.yaml |
+| LiDAR frame | `lidar` | matches lds02rr_driver |
 | LiDAR max range | 3.5 m | slam_toolbox.yaml |
 | EKF frequency | 50 Hz | ekf.yaml |
-| Nav2 max linear vel | 0.2 m/s | nav2.yaml |
+| Controller max linear vel | 0.2 m/s | nav2.yaml |
 
 ---
 
 ## Troubleshooting
 
-**micro-ROS agent can't connect**
+#### micro-ROS agent can't connect
+
 ```bash
-# Check which port the ESP32 is on
 ls /dev/ttyACM*
 ros2 launch burgerbot bringup.launch.py serial_port:=/dev/ttyACM0
 ```
 
-**No LiDAR scans**
+#### No LiDAR scans
+
 ```bash
 ros2 topic echo /scan --once
-# If empty, check port and baud rate
-ros2 launch burgerbot bringup.launch.py lidar_port:=/dev/ttyACM1
-```
-
-**SLAM map not building**
-```bash
-# Verify scan arriving and TF tree is complete
 ros2 topic hz /scan
-ros2 run tf2_tools view_frames
 ```
 
-**Nav2 nodes failing to activate**
-- Check `bond_timeout` — set to 30 s in nav2.yaml, gives nodes time to start on slow hardware.
-- Run `ros2 lifecycle list` to see which nodes are stuck.
+#### SLAM map not building
 
-**Gazebo sensors produce no data**
-- Ensure world SDF includes `gz-sim-sensors-system` and `gz-sim-imu-system` plugins (already in `burgerbot_world.sdf`).
+```bash
+ros2 run tf2_tools view_frames
+ros2 topic hz /scan
+```
+
+#### Nav2 nodes failing to activate
+
+```bash
+ros2 lifecycle list
+```
+
+`bond_timeout` is 30 s in nav2.yaml — nodes on slow hardware need time to start.
+
+#### Gazebo sensors produce no data in simulation
+
+Ensure world SDF contains `gz-sim-sensors-system` and `gz-sim-imu-system`
+plugins (already present in `burgerbot_world.sdf`).
+
+#### `transform from base_link to map` warnings never clear
+
+```bash
+ros2 topic hz /scan
+ros2 topic hz /clock
+ros2 topic hz /wheel_odom
+```
+
+If `/clock` is silent, the Gazebo bridge failed to connect to the sim.
