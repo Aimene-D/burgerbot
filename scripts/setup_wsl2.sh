@@ -36,7 +36,19 @@ sudo apt-get install -y -q \
 echo "==> Building workspace..."
 source /opt/ros/jazzy/setup.bash
 cd "$SCRIPT_DIR/../ros2_ws"
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# Conda intercepts python3, making cmake use its Python instead of the system
+# one that has catkin_pkg. Strip conda paths for the duration of the build.
+if [[ -n "$CONDA_PREFIX" || "$PATH" == */conda* || "$PATH" == */miniconda* ]]; then
+    echo "    (conda detected — using system python3 for the build)"
+    CLEAN_PATH="$(echo "$PATH" | tr ':' '\n' \
+        | grep -Ev "/(mini)?conda|/anaconda" \
+        | tr '\n' ':' | sed 's/:$//')"
+    PYTHONPATH="" PATH="$CLEAN_PATH" \
+        colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+else
+    colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+fi
 
 # ── 4. Mirrored networking check ─────────────────────────────────────────────
 echo ""
