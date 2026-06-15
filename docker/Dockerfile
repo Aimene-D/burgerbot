@@ -34,6 +34,10 @@ RUN apt-get update \
       ros-jazzy-imu-filter-madgwick \
       ros-jazzy-teleop-twist-keyboard \
       ros-jazzy-rviz2 \
+      ros-jazzy-rqt \
+      ros-jazzy-rqt-common-plugins \
+      ros-jazzy-rqt-tf-tree \
+      ros-jazzy-foxglove-bridge \
       python3-colcon-common-extensions \
       python3-rosdep \
       python3-serial \

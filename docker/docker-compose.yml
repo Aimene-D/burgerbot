@@ -57,6 +57,32 @@ services:
     command: bash
 
   # ════════════════════════════════════════════════════════════════════════
+  #  Debugging tools
+  # ════════════════════════════════════════════════════════════════════════
+
+  # Foxglove WebSocket bridge — exposes the ROS 2 graph on port 8765.
+  # Connect Foxglove Studio (Windows/Mac/browser) to ws://ROBOT_IP:8765.
+  # Start alongside bringup/slam so all topics are visible.
+  #   docker compose -f docker/docker-compose.yml run --rm foxglove
+  foxglove:
+    <<: *base
+    container_name: burgerbot_foxglove
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch foxglove_bridge foxglove_bridge.launch.xml"
+
+  # rqt GUI — node graph, topic inspector, TF tree, log console, plots.
+  # Needs a display: run via docker-compose.devmachine.yml on your Windows
+  # machine, or locally if the robot is connected to a monitor.
+  #   xhost +local:docker
+  #   docker compose -f docker/docker-compose.yml run --rm rqt
+  rqt:
+    <<: *gui
+    container_name: burgerbot_rqt
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash && rqt"
+
+  # ════════════════════════════════════════════════════════════════════════
   #  Modular simulation pieces — bring up ONE thing at a time to debug
   # ════════════════════════════════════════════════════════════════════════
 
