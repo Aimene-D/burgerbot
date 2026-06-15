@@ -2,7 +2,7 @@
 #
 # ── Prerequisites ───────────────────────────────────────────────────────────
 #
-# 1. Docker Desktop installed with the WSL2 backend (recommended on Windows 11).
+# 1. Docker Desktop installed with the WSL2 backend.
 #
 # 2. WSL2 mirrored networking (Windows 11 22H2+ only).
 #    Without it, network_mode:host attaches to the WSL2 VM's private subnet
@@ -14,21 +14,28 @@
 #    Then restart WSL2:
 #        wsl --shutdown
 #
-# 3. Set ROBOT_IP to the robot's LAN address before every run:
+# 3. VcXsrv — X server for Windows (display for RViz).
+#    Docker Desktop containers run inside an isolated WSL2 VM and cannot reach
+#    WSLg's display socket directly. VcXsrv runs on Windows and accepts X11
+#    connections over TCP, which the container reaches at host.docker.internal.
+#
+#    a. Download and install VcXsrv: https://vcxsrv.sourceforge.net
+#    b. Launch XLaunch (start menu) with these settings:
+#         - Multiple windows, display number 0
+#         - Start no client
+#         - Check "Disable access control"   ← required
+#    c. Allow it through the Windows Firewall if prompted.
+#    VcXsrv must be running every time you start the container.
+#
+# 4. Set ROBOT_IP to the robot's LAN address before every run:
 #        PowerShell:  $env:ROBOT_IP = "192.168.x.x"
 #        cmd.exe:     set ROBOT_IP=192.168.x.x
-#
-# 4. Display (GUI for RViz):
-#    • Windows 11 with WSLg (default):  DISPLAY=:0  ← already set below, nothing extra needed.
-#    • Windows 10 / no WSLg:            install VcXsrv, launch it with
-#      "Disable access control" checked, then override:
-#          set DISPLAY=host.docker.internal:0.0
-#      and comment-out the /tmp/.X11-unix volume mount below.
 #
 # ── Build (once, or after code changes) ────────────────────────────────────
 #   docker compose -f docker/docker-compose.devmachine.yml build
 #
 # ── Run ─────────────────────────────────────────────────────────────────────
+#   $env:ROBOT_IP = "192.168.x.x"
 #   docker compose -f docker/docker-compose.devmachine.yml run --rm rviz
 #
 # On the robot, make sure these are running first:
@@ -54,14 +61,13 @@ services:
       # Tells Cyclone DDS to probe ROBOT_IP directly instead of relying on
       # multicast (which most Wi-Fi access points block).
       - CYCLONEDDS_URI=file:///cyclone_peers.xml
-      # WSLg sets DISPLAY=:0 automatically; VcXsrv users override this.
-      - DISPLAY=${DISPLAY:-:0}
-      - QT_X11_NO_MITSHM=1
+      # VcXsrv listens on Windows; host.docker.internal resolves to the Windows
+      # host IP from inside the container. Display number must match XLaunch (0).
+      - DISPLAY=${DISPLAY:-host.docker.internal:0.0}
+      - LIBGL_ALWAYS_INDIRECT=0
     volumes:
       # DDS peer config — bind-mounted so you can change ROBOT_IP without rebuild.
       - ./cyclone_peers.xml:/cyclone_peers.xml:ro
-      # X11 socket for WSLg. Comment this out if using VcXsrv over TCP.
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 launch burgerbot debug.launch.py"
