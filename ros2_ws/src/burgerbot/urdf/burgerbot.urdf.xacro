@@ -1,196 +1,227 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="burgerbot">
 
-  <!-- ── Geometry (firmware/src/config.h is authoritative) ── -->
-  <xacro:property name="wheel_radius"     value="0.0625"/>
-  <xacro:property name="wheel_sep"        value="0.282"/>
-  <xacro:property name="base_radius"      value="0.0825"/>
-  <xacro:property name="base_height"      value="0.090"/>
-  <xacro:property name="wheel_width"      value="0.026"/>
-  <xacro:property name="caster_radius"    value="0.0175"/>
-  <xacro:property name="lidar_x"          value="-0.032"/>
-  <xacro:property name="lidar_z"          value="0.171"/>
-  <xacro:property name="imu_z"            value="0.050"/>
+  <!-- ════════════════════════════════════════════════════════════════════
+       Real robot description (CAD meshes from the original `rep` model).
+       Visuals  : detailed .dae meshes (meshes/rep/*.dae)
+       Inertials: CAD-computed mass/inertia from the original model
+       Collisions: simple primitives (robust in Gazebo; mesh-STL collisions
+                   were authored as cm-scaled boxes and are unreliable)
+       Kinematics: firmware/src/config.h is authoritative
+                     WHEEL_RADIUS_M = 0.0625
+                     WHEEL_BASE_M   = 0.282  (wheel separation)
+       Frame names match the rest of the stack (nav2 / ekf / gazebo sensors):
+         base_link, lidar, imu_link, left_wheel_joint, right_wheel_joint
+  ════════════════════════════════════════════════════════════════════ -->
 
-  <!-- ── Materials ── -->
-  <material name="chassis_grey"><color rgba="0.65 0.65 0.65 1.0"/></material>
-  <material name="wheel_black"><color rgba="0.15 0.15 0.15 1.0"/></material>
-  <material name="lidar_dark"><color rgba="0.2 0.2 0.2 1.0"/></material>
-  <material name="white"><color rgba="1.0 1.0 1.0 1.0"/></material>
+  <!-- ── Geometry (firmware authoritative) ── -->
+  <xacro:property name="wheel_radius"  value="0.0625"/>
+  <xacro:property name="wheel_sep"     value="0.282"/>
+  <xacro:property name="wheel_width"   value="0.026"/>
+  <!-- wheel axle height in base_link frame, from CAD (left/right_wheel_joint z) -->
+  <xacro:property name="wheel_z"       value="-0.027"/>
+  <!-- ground plane sits wheel_radius below the axle -->
+  <xacro:property name="ground_z"      value="${wheel_z - wheel_radius}"/>
+  <xacro:property name="caster_radius" value="0.0175"/>
 
-  <!-- ── base_footprint: virtual ground-plane reference ── -->
+  <!-- mesh path helper -->
+  <xacro:property name="mesh" value="package://burgerbot/meshes/rep"/>
+
+  <!-- ── Materials (fallback; .dae meshes carry their own colours) ── -->
+  <material name="Acier"><color rgba="0.965 0.965 0.953 1.0"/></material>
+
+  <!-- ── base_footprint: ground-plane reference ──
+       base_link sits |ground_z| above the contact plane -->
   <link name="base_footprint"/>
-
-  <!-- base_link sits at wheel-axle height above the floor -->
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/>
     <child  link="base_link"/>
-    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+    <origin xyz="0 0 ${-ground_z}" rpy="0 0 0"/>
   </joint>
 
-  <!-- ── base_link: circular chassis ── -->
+  <!-- ── base_link ── -->
   <link name="base_link">
+    <inertial>
+      <origin xyz="0.002457 0.000319 0.017256" rpy="0 0 0"/>
+      <mass value="2.915698"/>
+      <inertia ixx="1.497968e-02" ixy="-1.987847e-06" ixz="-6.198532e-04"
+               iyy="1.704262e-02" iyz="-5.692531e-05" izz="2.223752e-02"/>
+    </inertial>
     <visual>
-      <geometry><cylinder radius="${base_radius}" length="${base_height}"/></geometry>
-      <material name="chassis_grey"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/base_link.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
-      <geometry><cylinder radius="${base_radius}" length="${base_height}"/></geometry>
+      <!-- chassis approximated by a cylinder spanning the body -->
+      <origin xyz="0 0 0.017" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0825" length="0.090"/></geometry>
     </collision>
-    <inertial>
-      <mass value="2.0"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <!-- solid cylinder: Ixx=Iyy = m(3r²+h²)/12, Izz = mr²/2 -->
-      <inertia ixx="0.00564" ixy="0" ixz="0"
-               iyy="0.00564" iyz="0"
-               izz="0.00284"/>
-    </inertial>
   </link>
 
   <!-- ── Left wheel ── -->
   <joint name="left_wheel_joint" type="continuous">
     <parent link="base_link"/>
-    <child  link="left_wheel_link"/>
-    <!-- rotate -90° around X so wheel cylinder axis aligns with Y -->
-    <origin xyz="0 ${wheel_sep/2} 0" rpy="${-pi/2} 0 0"/>
-    <axis xyz="0 0 1"/>
+    <child  link="left_wheel"/>
+    <origin xyz="0 ${wheel_sep/2} ${wheel_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100.0" velocity="1.0"/>
   </joint>
-
-  <link name="left_wheel_link">
+  <link name="left_wheel">
+    <inertial>
+      <origin xyz="0.000005 0.022147 0.000002" rpy="0 0 0"/>
+      <mass value="1.021548"/>
+      <inertia ixx="1.666424e-03" ixy="1.189099e-08" ixz="4.089806e-08"
+               iyy="2.596221e-03" iyz="-7.180651e-08" izz="1.666591e-03"/>
+    </inertial>
     <visual>
-      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
-      <material name="wheel_black"/>
+      <origin xyz="-0.000411 0.019078 -0.001942" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/left_wheel.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
+      <!-- cylinder axis along the joint Y axis -->
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
       <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
     </collision>
-    <inertial>
-      <mass value="0.1"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <!-- thin disk: Ixx=Iyy = m(3r²+h²)/12, Izz = mr²/2 -->
-      <inertia ixx="9.90e-5" ixy="0" ixz="0"
-               iyy="9.90e-5" iyz="0"
-               izz="1.95e-4"/>
-    </inertial>
   </link>
 
   <!-- ── Right wheel ── -->
   <joint name="right_wheel_joint" type="continuous">
     <parent link="base_link"/>
-    <child  link="right_wheel_link"/>
-    <origin xyz="0 ${-wheel_sep/2} 0" rpy="${pi/2} 0 0"/>
-    <axis xyz="0 0 1"/>
+    <child  link="right_wheel"/>
+    <origin xyz="0 ${-wheel_sep/2} ${wheel_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="100.0" velocity="1.0"/>
   </joint>
-
-  <link name="right_wheel_link">
+  <link name="right_wheel">
+    <inertial>
+      <origin xyz="-0.000005 -0.022147 0.000002" rpy="0 0 0"/>
+      <mass value="1.021548"/>
+      <inertia ixx="1.666424e-03" ixy="1.189099e-08" ixz="-4.089806e-08"
+               iyy="2.596221e-03" iyz="7.180651e-08" izz="1.666591e-03"/>
+    </inertial>
     <visual>
-      <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
-      <material name="wheel_black"/>
+      <origin xyz="0.000411 -0.019078 -0.001942" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/right_wheel.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
+      <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
       <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
     </collision>
-    <inertial>
-      <mass value="0.1"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="9.90e-5" ixy="0" ixz="0"
-               iyy="9.90e-5" iyz="0"
-               izz="1.95e-4"/>
-    </inertial>
   </link>
 
-  <!-- ── Front caster ── -->
-  <!-- caster centre must sit at floor: z = -(wheel_radius - caster_radius) in base_link frame -->
-  <joint name="front_caster_joint" type="fixed">
+  <!-- ── Front caster (CAD position; collision sphere drops to ground) ── -->
+  <joint name="caster_wheel1_joint" type="fixed">
     <parent link="base_link"/>
-    <child  link="front_caster_link"/>
-    <origin xyz="0.057 0 ${-(wheel_radius - caster_radius)}" rpy="0 0 0"/>
+    <child  link="caster_wheel1"/>
+    <origin xyz="0.122500 0 -0.023000" rpy="0 0 0"/>
   </joint>
-
-  <link name="front_caster_link">
+  <link name="caster_wheel1">
+    <inertial>
+      <origin xyz="-0.002156 0 -0.019873" rpy="0 0 0"/>
+      <mass value="0.605039"/>
+      <inertia ixx="4.333806e-04" ixy="0" ixz="4.094011e-05"
+               iyy="4.187976e-04" iyz="0" izz="1.115116e-04"/>
+    </inertial>
     <visual>
-      <geometry><sphere radius="${caster_radius}"/></geometry>
-      <material name="wheel_black"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/caster_wheel1.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
+      <origin xyz="0 0 ${ground_z - (-0.023000) + caster_radius}" rpy="0 0 0"/>
       <geometry><sphere radius="${caster_radius}"/></geometry>
     </collision>
-    <inertial>
-      <mass value="0.01"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="4e-7" ixy="0" ixz="0"
-               iyy="4e-7" iyz="0"
-               izz="4e-7"/>
-    </inertial>
   </link>
 
   <!-- ── Rear caster ── -->
-  <joint name="rear_caster_joint" type="fixed">
+  <joint name="caster_wheel2_joint" type="fixed">
     <parent link="base_link"/>
-    <child  link="rear_caster_link"/>
-    <origin xyz="-0.054 0 ${-(wheel_radius - caster_radius)}" rpy="0 0 0"/>
+    <child  link="caster_wheel2"/>
+    <origin xyz="-0.125000 0 -0.035500" rpy="0 0 0"/>
   </joint>
-
-  <link name="rear_caster_link">
+  <link name="caster_wheel2">
+    <inertial>
+      <origin xyz="0.002156 0 -0.007373" rpy="0 0 0"/>
+      <mass value="0.605039"/>
+      <inertia ixx="4.333806e-04" ixy="0" ixz="-4.094010e-05"
+               iyy="4.187976e-04" iyz="0" izz="1.115116e-04"/>
+    </inertial>
     <visual>
-      <geometry><sphere radius="${caster_radius}"/></geometry>
-      <material name="wheel_black"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/caster_wheel2.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
+      <origin xyz="0 0 ${ground_z - (-0.035500) + caster_radius}" rpy="0 0 0"/>
       <geometry><sphere radius="${caster_radius}"/></geometry>
     </collision>
-    <inertial>
-      <mass value="0.01"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="4e-7" ixy="0" ixz="0"
-               iyy="4e-7" iyz="0"
-               izz="4e-7"/>
-    </inertial>
   </link>
 
-  <!-- ── LiDAR (frame name MUST match lds02rr_driver frame_id: 'lidar') ── -->
+  <!-- ── LiDAR (link name 'lidar' matches lds02rr_driver + sim sensor) ── -->
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="lidar"/>
-    <origin xyz="${lidar_x} 0 ${lidar_z}" rpy="0 0 0"/>
+    <origin xyz="0.055000 0.002000 0.123200" rpy="0 0 0"/>
   </joint>
-
   <link name="lidar">
+    <inertial>
+      <origin xyz="0 0 0.005494" rpy="0 0 0"/>
+      <mass value="0.756885"/>
+      <inertia ixx="2.679588e-04" ixy="0" ixz="0"
+               iyy="2.679523e-04" iyz="0" izz="4.518700e-04"/>
+    </inertial>
     <visual>
-      <geometry><cylinder radius="0.0508" length="0.055"/></geometry>
-      <material name="lidar_dark"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/lidar.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
     </visual>
     <collision>
+      <origin xyz="0 0 0.0055" rpy="0 0 0"/>
       <geometry><cylinder radius="0.0508" length="0.055"/></geometry>
     </collision>
-    <inertial>
-      <mass value="0.114"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="9.24e-5" ixy="0" ixz="0"
-               iyy="9.24e-5" iyz="0"
-               izz="1.47e-4"/>
-    </inertial>
   </link>
 
-  <!-- ── IMU ── -->
+  <!-- ── IMU (link name 'imu_link' matches sim sensor reference) ── -->
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child  link="imu_link"/>
-    <origin xyz="0 0 ${imu_z}" rpy="0 0 0"/>
+    <origin xyz="0 0 0.075500" rpy="0 0 0"/>
   </joint>
-
   <link name="imu_link">
-    <visual>
-      <geometry><box size="0.01 0.01 0.005"/></geometry>
-      <material name="white"/>
-    </visual>
     <inertial>
-      <mass value="0.001"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="1e-8" ixy="0" ixz="0"
-               iyy="1e-8" iyz="0"
-               izz="1e-8"/>
+      <mass value="0.023550"/>
+      <inertia ixx="1.815312e-06" ixy="0" ixz="0"
+               iyy="1.000000e-06" iyz="0" izz="2.551250e-06"/>
     </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/imu.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
+    </visual>
+  </link>
+
+  <!-- ── Magnetometer (compass; firmware publishes /mag) ── -->
+  <joint name="mag_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="mag"/>
+    <origin xyz="0.142000 -0.003000 0.005500" rpy="0 0 0"/>
+  </joint>
+  <link name="mag">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.023550"/>
+      <inertia ixx="1.000000e-06" ixy="0" ixz="0"
+               iyy="1.815312e-06" iyz="0" izz="2.551250e-06"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh}/mag.dae" scale="1 1 1"/></geometry>
+      <material name="Acier"/>
+    </visual>
   </link>
 
 </robot>
