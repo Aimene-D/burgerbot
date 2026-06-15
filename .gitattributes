@@ -7,3 +7,4 @@ Dockerfile      text eol=lf
 *.xacro         text eol=lf
 *.sdf           text eol=lf
 *.urdf          text eol=lf
+*.md            text eol=lf
