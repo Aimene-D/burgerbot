@@ -9,6 +9,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   lds02rr_driver/lds02rr_node.py
   DESTINATION lib/${PROJECT_NAME}
+  RENAME lds02rr_node
 )
 
 install(DIRECTORY launch

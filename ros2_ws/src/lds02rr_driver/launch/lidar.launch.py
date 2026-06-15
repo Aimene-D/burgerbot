@@ -8,7 +8,7 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package='lds02rr_driver',
-            executable='lds02rr_node.py',
+            executable='lds02rr_node',
             name='lds02rr_driver',
             output='screen',
             parameters=[{
