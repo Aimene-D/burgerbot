@@ -15,6 +15,11 @@
 -->
 <CycloneDDS>
   <Domain>
+    <General>
+      <!-- Disable multicast: Wi-Fi APs block it, and it is not needed when
+           peers are listed explicitly below. Forces pure unicast discovery. -->
+      <AllowMulticast>false</AllowMulticast>
+    </General>
     <Discovery>
       <Peers>
         <Peer address="${ROBOT_IP}"/>

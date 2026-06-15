@@ -1,35 +1,51 @@
-# Dev machine RViz — connect to the remote robot's ROS 2 graph from Windows.
+# Dev machine RViz / rqt — connect to the remote robot's ROS 2 graph from Windows.
 #
-# ── Prerequisites ───────────────────────────────────────────────────────────
+# ══ IMPORTANT: Docker Desktop host networking ════════════════════════════════
 #
-# 1. Docker Desktop installed with the WSL2 backend.
+# network_mode:host is NOT enabled by default on Docker Desktop for Windows.
+# Without it, DDS reply packets from the robot reach the Windows host IP but
+# never get forwarded into the container → RViz/rqt open but show no topics.
 #
-# 2. WSL2 mirrored networking (Windows 11 22H2+ only).
-#    Without it, network_mode:host attaches to the WSL2 VM's private subnet
-#    instead of your LAN, and DDS cannot reach the robot.
+# Enable it once in Docker Desktop:
+#   Settings → Resources → Network → ✅ Enable host networking → Apply & Restart
+#   (Requires Docker Desktop 4.24 or later.)
 #
-#    Enable once — add these lines to %USERPROFILE%\.wslconfig:
+# ── Additional prerequisites ────────────────────────────────────────────────
+#
+# 1. WSL2 mirrored networking (Windows 11 22H2+ only).
+#    Makes the WSL2 VM share the Windows host's LAN IP so host-mode containers
+#    are reachable from the robot.
+#
+#    Enable once — add to %USERPROFILE%\.wslconfig:
 #        [wsl2]
 #        networkingMode=mirrored
-#    Then restart WSL2:
-#        wsl --shutdown
+#    Then: wsl --shutdown
 #
-# 3. VcXsrv — X server for Windows (display for RViz).
-#    Docker Desktop containers run inside an isolated WSL2 VM and cannot reach
-#    WSLg's display socket directly. VcXsrv runs on Windows and accepts X11
-#    connections over TCP, which the container reaches at host.docker.internal.
+# 2. VcXsrv — X server for the RViz / rqt GUI window.
+#    a. Install VcXsrv: https://vcxsrv.sourceforge.net
+#    b. Launch XLaunch: Multiple windows · display 0 · no client
+#       ✅ Disable access control   ← required
+#    c. Allow through Windows Firewall if prompted.
+#    Must be running every time you start a container.
 #
-#    a. Download and install VcXsrv: https://vcxsrv.sourceforge.net
-#    b. Launch XLaunch (start menu) with these settings:
-#         - Multiple windows, display number 0
-#         - Start no client
-#         - Check "Disable access control"   ← required
-#    c. Allow it through the Windows Firewall if prompted.
-#    VcXsrv must be running every time you start the container.
-#
-# 4. Set ROBOT_IP to the robot's LAN address before every run:
+# 3. Set ROBOT_IP before every run:
 #        PowerShell:  $env:ROBOT_IP = "192.168.x.x"
-#        cmd.exe:     set ROBOT_IP=192.168.x.x
+#
+# ── Verify the fix works ────────────────────────────────────────────────────
+# After enabling host networking, open a shell inside the container and check:
+#   docker compose -f docker/docker-compose.devmachine.yml run --rm shell
+#   # inside:
+#   ping ROBOT_IP            # should reply
+#   ros2 topic list          # should show robot topics
+#
+# ── Reliable alternative: WSL2 native (no Docker needed for GUI tools) ──────
+# If Docker Desktop host networking is unavailable or still not working,
+# install ROS 2 Jazzy directly inside WSL2 Ubuntu and run:
+#   sudo apt install ros-jazzy-desktop ros-jazzy-rqt-common-plugins ros-jazzy-rqt-tf-tree
+#   export ROBOT_IP=192.168.x.x
+#   ./scripts/connect_rviz.sh $ROBOT_IP          # RViz
+#   ./scripts/connect_rviz.sh $ROBOT_IP rqt      # rqt
+# WSLg (Windows 11) provides the display automatically — no VcXsrv needed.
 #
 # ── Build (once, or after code changes) ────────────────────────────────────
 #   docker compose -f docker/docker-compose.devmachine.yml build
@@ -39,11 +55,9 @@
 #   docker compose -f docker/docker-compose.devmachine.yml run --rm rviz
 #   docker compose -f docker/docker-compose.devmachine.yml run --rm rqt
 #
-# For Foxglove Studio (native Windows app — no Docker needed):
-#   1. Start foxglove on the robot:
-#        docker compose -f docker/docker-compose.yml run --rm foxglove
-#   2. Open Foxglove Studio → Open Connection → Foxglove WebSocket
-#        URL: ws://ROBOT_IP:8765
+# For Foxglove Studio (native Windows app — no Docker, no host networking):
+#   1. On robot: docker compose -f docker/docker-compose.yml run --rm foxglove
+#   2. Foxglove Studio → Open Connection → Foxglove WebSocket → ws://ROBOT_IP:8765
 #
 # On the robot, make sure these are running first:
 #   docker compose -f docker/docker-compose.yml run --rm bringup
@@ -83,3 +97,11 @@ services:
     container_name: burgerbot_rqt_dev
     command: >
       bash -c "source /ros2_ws/install/setup.bash && rqt"
+
+  # Diagnostic shell — use to verify connectivity before running rviz/rqt.
+  #   docker compose -f docker/docker-compose.devmachine.yml run --rm shell
+  #   Inside: ping ROBOT_IP  /  ros2 topic list  /  ros2 node list
+  shell:
+    <<: *devbase
+    container_name: burgerbot_shell_dev
+    command: bash -c "source /ros2_ws/install/setup.bash && bash"
