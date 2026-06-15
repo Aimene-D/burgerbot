@@ -48,6 +48,8 @@ Add both lines to `~/.bashrc` to avoid re-sourcing every terminal.
 
 ## Docker
 
+Runs on Ubuntu (tested on Ubuntu 24.04 with Docker Engine).
+
 ### Prerequisites
 
 - Docker Engine: `sudo apt install docker.io docker-compose-plugin`
@@ -61,38 +63,63 @@ docker compose -f docker/docker-compose.yml build
 ```
 
 > First build takes ~15 minutes — micro-ROS agent is compiled from source.
-> Subsequent builds are cached.
+> Subsequent builds are cached. All services share one image (`burgerbot:latest`).
 
-### Run: simulation (headless, no display needed)
+### Modular services
+
+Every service runs with `network_mode: host` and the same `ROS_DOMAIN_ID`, so all
+containers join **one ROS 2 graph**. Start pieces in separate terminals and they
+talk to each other — bring up one component at a time when debugging.
+
+| Service | What it runs | Display |
+| ------- | ------------ | ------- |
+| `shell` | Interactive CLI with workspace sourced (`ros2 topic …`, builds) | — |
+| `gazebo` | Gazebo world + robot spawn + bridge + IMU filter + EKF only | headless |
+| `gazebo-gui` | Same as `gazebo`, with the Gazebo GUI window | X11 |
+| `rviz` | RViz2 only, pre-configured layout — visualization client | X11 |
+| `sim-slam` | Gazebo + SLAM Toolbox (mapping) | headless |
+| `sim-nav` | Gazebo + SLAM + Nav2 (full autonomous sim) | headless |
+| `bringup` | Hardware sensors only (micro-ROS, LiDAR, IMU, EKF) | needs `/dev/ttyACM*` |
+| `robot` | Hardware + SLAM + Nav2 (map while navigating) | needs `/dev/ttyACM*` |
+
+Run any service (`--rm` cleans up the container on exit):
 
 ```bash
-docker compose -f docker/docker-compose.yml run sim
+docker compose -f docker/docker-compose.yml run --rm <service>
 ```
 
-Gazebo runs in server-only mode (`-s`) by default — no GUI, no X11 required.
-All ROS 2 topics are available on the host via `network_mode: host`.
+### Debug one thing at a time
 
-### Run: simulation with Gazebo GUI
+```bash
+# Terminal 1 — just the simulated world, nothing else
+docker compose -f docker/docker-compose.yml run --rm gazebo
+
+# Terminal 2 — visualize what the sim is publishing
+xhost +local:docker
+docker compose -f docker/docker-compose.yml run --rm rviz
+
+# Terminal 3 — inspect the live ROS 2 graph
+docker compose -f docker/docker-compose.yml run --rm shell
+# inside: ros2 topic list / ros2 topic hz /scan / ros2 topic echo /clock
+```
+
+### GUI services on Ubuntu
+
+GUI services (`gazebo-gui`, `rviz`) forward the host X server. Allow local docker
+clients once per login session:
 
 ```bash
 xhost +local:docker
-docker compose -f docker/docker-compose.yml run sim \
-  bash -c "source /ros2_ws/install/setup.bash && ros2 launch burgerbot sim_nav.launch.py headless:=false"
 ```
 
 ### Run: physical robot
 
 ```bash
-docker compose -f docker/docker-compose.yml run robot
+docker compose -f docker/docker-compose.yml run --rm robot
 ```
 
-Requires `/dev/ttyACM0` (ESP32) and `/dev/ttyACM1` (LiDAR) connected.
-
-### Run: headless CLI shell
-
-```bash
-docker compose -f docker/docker-compose.yml run headless bash
-```
+Requires `/dev/ttyACM0` (ESP32) and `/dev/ttyACM1` (LiDAR) connected. Use the
+`bringup` service first to confirm sensors work before adding SLAM/Nav2.
 
 ---
 

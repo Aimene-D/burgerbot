@@ -17,6 +17,3 @@ colcon build \
 echo ""
 echo "==> Build complete. Source your workspace with:"
 echo "      source $WS_DIR/install/setup.bash"
-echo ""
-echo "==> Or use the convenience script (portable, uses relative path):"
-echo "      source $SCRIPT_DIR/../installfff/setup.bash"

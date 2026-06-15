@@ -1,48 +1,145 @@
-version: "3.8"
+# burgerbot docker-compose — Ubuntu host (Ubuntu 24.04 / Docker Engine).
+#
+# All services share the same image and run with network_mode: host + a common
+# ROS_DOMAIN_ID, so every container joins ONE ROS 2 graph. That means you can run
+# modular services in separate terminals and they talk to each other — e.g. start
+# `gazebo` in one terminal and `rviz` in another to debug a single piece at a time.
+#
+# GUI services (anything that opens Gazebo's window or RViz) need access to the
+# host X server. On Ubuntu, allow local docker clients ONCE per login session:
+#     xhost +local:docker
+#
+# Run a service:   docker compose -f docker/docker-compose.yml run --rm <service>
+# Build the image: docker compose -f docker/docker-compose.yml build
 
-x-burgerbot: &base
+# ── shared base: headless services, no display ───────────────────────────────
+x-base: &base
   build:
     context: ..
     dockerfile: docker/Dockerfile
+  image: burgerbot:latest
   network_mode: host
   ipc: host
+  stdin_open: true
+  tty: true
   environment:
     - ROS_DOMAIN_ID=0
 
+# ── shared base: GUI services, forwards the host X server (Ubuntu) ───────────
+x-gui: &gui
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: burgerbot:latest
+  network_mode: host
+  ipc: host
+  stdin_open: true
+  tty: true
+  environment:
+    - ROS_DOMAIN_ID=0
+    - DISPLAY=${DISPLAY:-:0}
+    - QT_X11_NO_MITSHM=1
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
 services:
 
-  # ── CLI shell, no display ─────────────────────────────────────────────────
-  headless:
-    <<: *base
-    container_name: burgerbot_headless
-    stdin_open: true
-    tty: true
+  # ════════════════════════════════════════════════════════════════════════
+  #  Utility
+  # ════════════════════════════════════════════════════════════════════════
 
-  # ── Gazebo + RViz2, requires X11 on host ─────────────────────────────────
-  # Linux: run `xhost +local:docker` before starting
-  # WSL2 on Windows: configure WSLg or VcXsrv and set DISPLAY
-  sim:
+  # Interactive CLI shell with the workspace sourced. No display, no devices.
+  # Use it to run `ros2 topic ...`, build, or poke at the graph.
+  #   docker compose -f docker/docker-compose.yml run --rm shell
+  shell:
     <<: *base
-    container_name: burgerbot_sim
-    stdin_open: true
-    tty: true
-    environment:
-      - ROS_DOMAIN_ID=0
-      - DISPLAY=${DISPLAY:-:0}
-      - QT_X11_NO_MITSHM=1
+    container_name: burgerbot_shell
+    command: bash
+
+  # ════════════════════════════════════════════════════════════════════════
+  #  Modular simulation pieces — bring up ONE thing at a time to debug
+  # ════════════════════════════════════════════════════════════════════════
+
+  # Gazebo world + robot spawn + bridge + IMU filter + EKF. Nothing else.
+  # Headless by default (no display needed). Inspect with the `shell` service.
+  #   docker compose -f docker/docker-compose.yml run --rm gazebo
+  gazebo:
+    <<: *base
+    container_name: burgerbot_gazebo
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot gazebo.launch.py headless:=true"
+
+  # Same as `gazebo` but opens the Gazebo GUI window (needs xhost on Ubuntu).
+  #   xhost +local:docker
+  #   docker compose -f docker/docker-compose.yml run --rm gazebo-gui
+  gazebo-gui:
+    <<: *gui
+    container_name: burgerbot_gazebo_gui
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot gazebo.launch.py headless:=false"
+
+  # RViz2 only, with the pre-configured burgerbot layout. Visualization client —
+  # run it alongside any other service to see TF / scan / map / costmaps.
+  #   xhost +local:docker
+  #   docker compose -f docker/docker-compose.yml run --rm rviz
+  rviz:
+    <<: *gui
+    container_name: burgerbot_rviz
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot debug.launch.py use_sim_time:=true"
+
+  # ════════════════════════════════════════════════════════════════════════
+  #  Full simulation stacks
+  # ════════════════════════════════════════════════════════════════════════
+
+  # Gazebo + SLAM Toolbox (mapping). Headless; pair with `rviz` to watch the map.
+  #   docker compose -f docker/docker-compose.yml run --rm sim-slam
+  sim-slam:
+    <<: *base
+    container_name: burgerbot_sim_slam
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot sim_slam.launch.py"
+
+  # Gazebo + SLAM + Nav2 (full autonomous navigation in sim). Headless.
+  #   docker compose -f docker/docker-compose.yml run --rm sim-nav
+  sim-nav:
+    <<: *base
+    container_name: burgerbot_sim_nav
+    volumes:
       - ${HOME}/maps:/root/maps
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 launch burgerbot sim_nav.launch.py"
 
-  # ── Real robot: access /dev/ttyACM* for ESP32 + LiDAR ─────────────────
+  # ════════════════════════════════════════════════════════════════════════
+  #  Physical robot — needs the ESP32 + LiDAR on /dev/ttyACM*
+  # ════════════════════════════════════════════════════════════════════════
+
+  # Sensors only: micro-ROS agent, robot_state_publisher, LiDAR, IMU filter, EKF.
+  # No autonomy — good for verifying hardware before adding SLAM/Nav2.
+  #   docker compose -f docker/docker-compose.yml run --rm bringup
+  bringup:
+    <<: *base
+    container_name: burgerbot_bringup
+    privileged: true
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev/ttyACM1:/dev/ttyACM1
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot bringup.launch.py"
+
+  # Full robot: bringup + SLAM + Nav2 (map while navigating).
+  #   docker compose -f docker/docker-compose.yml run --rm robot
   robot:
     <<: *base
     container_name: burgerbot_robot
-    stdin_open: true
-    tty: true
     privileged: true
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
