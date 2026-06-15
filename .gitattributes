@@ -8,3 +8,4 @@ Dockerfile      text eol=lf
 *.sdf           text eol=lf
 *.urdf          text eol=lf
 *.md            text eol=lf
+.gitattributes  text eol=lf
