@@ -10,18 +10,25 @@ def generate_launch_description():
     launch_dir = PathJoinSubstitution([pkg, 'launch'])
 
     use_sim_time = LaunchConfiguration('use_sim_time')
-
-    def include(name):
-        return IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([launch_dir, f'/{name}']),
-            launch_arguments={'use_sim_time': use_sim_time}.items(),
-        )
+    headless     = LaunchConfiguration('headless')
 
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time', default_value='true',
             description='Use Gazebo simulation clock'),
+        DeclareLaunchArgument(
+            'headless', default_value='true',
+            description='Run Gazebo server only (no GUI). Set false to open Gazebo window.'),
 
-        include('gazebo.launch.py'),
-        include('slam.launch.py'),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([launch_dir, '/gazebo.launch.py']),
+            launch_arguments={
+                'use_sim_time': use_sim_time,
+                'headless':     headless,
+            }.items(),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([launch_dir, '/slam.launch.py']),
+            launch_arguments={'use_sim_time': use_sim_time}.items(),
+        ),
     ])

@@ -70,7 +70,7 @@ Visualization Manager:
         Value: /local_plan
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map
+    Fixed Frame: odom
     Frame Rate: 30
   Tools:
     - Class: rviz_default_plugins/Interact

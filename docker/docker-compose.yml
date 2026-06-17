@@ -31,6 +31,7 @@ x-gui: &gui
     context: ..
     dockerfile: docker/Dockerfile
   image: burgerbot:latest
+  runtime: nvidia
   network_mode: host
   ipc: host
   stdin_open: true
@@ -39,6 +40,9 @@ x-gui: &gui
     - ROS_DOMAIN_ID=0
     - DISPLAY=${DISPLAY:-:0}
     - QT_X11_NO_MITSHM=1
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=graphics,display,utility
+    - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/local/share/glvnd/egl_vendor.d/10_nvidia.json
   volumes:
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
@@ -121,7 +125,24 @@ services:
   #  Full simulation stacks
   # ════════════════════════════════════════════════════════════════════════
 
+  # Gazebo + SLAM Toolbox (mapping) with Gazebo GUI open.
+  # Everything in one window — no separate rviz needed to see the sim,
+  # but you can still run `rviz` alongside to watch the map build.
+  # NOTE: never run alongside `gazebo` / `gazebo-gui` (duplicate /clock).
+  #   xhost +local:docker
+  #   docker compose -f docker/docker-compose.yml run --rm sim-slam-gui
+  sim-slam-gui:
+    <<: *gui
+    container_name: burgerbot_sim_slam_gui
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot sim_slam.launch.py headless:=false"
+
   # Gazebo + SLAM Toolbox (mapping). Headless; pair with `rviz` to watch the map.
+  # NOTE: never run alongside `gazebo` / `gazebo-gui` (duplicate /clock).
   #   docker compose -f docker/docker-compose.yml run --rm sim-slam
   sim-slam:
     <<: *base
@@ -133,6 +154,7 @@ services:
                ros2 launch burgerbot sim_slam.launch.py"
 
   # Gazebo + SLAM + Nav2 (full autonomous navigation in sim). Headless.
+  # NOTE: never run alongside `gazebo` / `gazebo-gui` (duplicate /clock).
   #   docker compose -f docker/docker-compose.yml run --rm sim-nav
   sim-nav:
     <<: *base

@@ -4,6 +4,16 @@
   <!-- Base geometry: links, joints, visuals, inertials -->
   <xacro:include filename="$(find burgerbot)/urdf/burgerbot.urdf.xacro"/>
 
+  <!-- ── Joint State Publisher ─────────────────────────────────────────────
+       Publishes wheel joint positions so robot_state_publisher can emit the
+       base_link->left_wheel / base_link->right_wheel TF (RViz RobotModel).
+       Bridged to ROS /joint_states via ros_gz_bridge.
+  ──────────────────────────────────────────────────────────────────────── -->
+  <gazebo>
+    <plugin name="gz::sim::systems::JointStatePublisher"
+            filename="gz-sim-joint-state-publisher-system"/>
+  </gazebo>
+
   <!-- ── Differential Drive ────────────────────────────────────────────────
        Subscribes: /cmd_vel
        Publishes:  /wheel_odom (Odometry, 50 Hz)
@@ -21,7 +31,7 @@
       <topic>/cmd_vel</topic>
       <odom_topic>/wheel_odom</odom_topic>
       <frame_id>odom</frame_id>
-      <child_frame_id>base_link</child_frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
       <publish_odom>true</publish_odom>
       <publish_odom_tf>false</publish_odom_tf>
     </plugin>
