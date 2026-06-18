@@ -110,13 +110,18 @@ The RCL YAML parser rejects mixed integer/float sequences.
 ```mermaid
 stateDiagram-v2
     [*] --> Mapping : slam.launch.py
-    Mapping : async_slam_toolbox_node\nBuilds /map from /scan\nPublishes map->odom TF
+    Mapping : async_slam_toolbox_node
+    Mapping : Builds /map from /scan
+    Mapping : Publishes map to odom TF
 
-    Mapping --> SaveMap : ros2 service call\n/slam_toolbox/save_map
+    Mapping --> SaveMap : save_map service
     SaveMap --> [*]
 
-    [*] --> Localization : localization.launch.py\nmap:=<path>
-    Localization : localization_slam_toolbox_node\nLoads saved .yaml + .posegraph\nLocalizes without modifying map
+    [*] --> Localization : localization.launch.py
+    Localization : localization_slam_toolbox_node
+    Localization : map arg sets the map path
+    Localization : Loads saved .yaml + .posegraph
+    Localization : Localizes without modifying map
 ```
 
 `map_file_name` is injected at launch time via the `map:=` arg — no hardcoded paths in any config file.
