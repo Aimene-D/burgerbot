@@ -33,6 +33,8 @@ RUN apt-get update \
       ros-jazzy-robot-localization \
       ros-jazzy-imu-filter-madgwick \
       ros-jazzy-teleop-twist-keyboard \
+      ros-jazzy-teleop-twist-joy \
+      ros-jazzy-joy \
       ros-jazzy-rviz2 \
       ros-jazzy-rqt \
       ros-jazzy-rqt-common-plugins \
