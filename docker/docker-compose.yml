@@ -49,6 +49,25 @@ x-gui: &gui
 services:
 
   # ════════════════════════════════════════════════════════════════════════
+  #  Teleop
+  # ════════════════════════════════════════════════════════════════════════
+
+  # Joystick teleop — joy_node reads /dev/input/js0 then teleop_twist_joy
+  # publishes to /cmd_vel.  Hold L1/LB to drive, R1/RB for turbo.
+  # Axis layout (most gamepads): left stick = linear, right stick = angular.
+  # Run alongside `gazebo` / `sim-slam` / etc. in a second terminal.
+  #   docker compose -f docker/docker-compose.yml run --rm teleop
+  teleop:
+    <<: *base
+    container_name: burgerbot_teleop
+    devices:
+      - /dev/input/js0:/dev/input/js0
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch teleop_twist_joy teleop-launch.py
+                 joy_config:=xbox"
+
+  # ════════════════════════════════════════════════════════════════════════
   #  Utility
   # ════════════════════════════════════════════════════════════════════════
 
@@ -164,6 +183,21 @@ services:
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 launch burgerbot sim_nav.launch.py"
+
+  # Gazebo + SLAM + Nav2 with Gazebo GUI open. Pair with `rviz` to watch
+  # the map and costmaps while navigating. Good for tuning Nav2 parameters.
+  # NOTE: never run alongside `gazebo` / `gazebo-gui` / `sim-nav` (duplicate /clock).
+  #   xhost +local:docker
+  #   docker compose -f docker/docker-compose.yml run --rm sim-nav-gui
+  sim-nav-gui:
+    <<: *gui
+    container_name: burgerbot_sim_nav_gui
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/maps:/root/maps
+    command: >
+      bash -c "source /ros2_ws/install/setup.bash &&
+               ros2 launch burgerbot sim_nav.launch.py headless:=false"
 
   # ════════════════════════════════════════════════════════════════════════
   #  Physical robot — needs the ESP32 + LiDAR on /dev/ttyACM*
