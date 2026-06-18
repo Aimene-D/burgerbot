@@ -65,7 +65,7 @@
     <child  link="left_wheel"/>
     <origin xyz="0 ${wheel_sep/2} ${wheel_z}" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit effort="100.0" velocity="1.0"/>
+    <limit effort="100.0" velocity="20.0"/>
   </joint>
   <link name="left_wheel">
     <inertial>
@@ -92,7 +92,7 @@
     <child  link="right_wheel"/>
     <origin xyz="0 ${-wheel_sep/2} ${wheel_z}" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit effort="100.0" velocity="1.0"/>
+    <limit effort="100.0" velocity="20.0"/>
   </joint>
   <link name="right_wheel">
     <inertial>
