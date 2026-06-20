@@ -26,12 +26,13 @@ x-base: &base
     - ROS_DOMAIN_ID=0
 
 # ── shared base: GUI services, forwards the host X server (Ubuntu) ───────────
+# Requires NVIDIA GPU + nvidia-container-toolkit on the host for HW-accelerated
+# OpenGL.  Use *gui-generic (below) on machines without an NVIDIA GPU.
 x-gui: &gui
   build:
     context: ..
     dockerfile: docker/Dockerfile
   image: burgerbot:latest
-  runtime: nvidia
   network_mode: host
   ipc: host
   stdin_open: true
@@ -45,6 +46,52 @@ x-gui: &gui
     - __EGL_VENDOR_LIBRARY_FILENAMES=/usr/local/share/glvnd/egl_vendor.d/10_nvidia.json
   volumes:
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+# ── GUI base — software rendering (no NVIDIA GPU needed) ──────────────────
+# For integrated / AMD GPUs or machines without a GPU.  Gazebo / RViz will
+# fall back to Mesa/llvmpipe software rendering — functional but slower.
+# Use instead of *gui when the host does NOT have an NVIDIA GPU.
+#   service:
+#     <<: *gui-generic
+x-gui-generic: &gui-generic
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: burgerbot:latest
+  network_mode: host
+  ipc: host
+  stdin_open: true
+  tty: true
+  environment:
+    - ROS_DOMAIN_ID=0
+    - DISPLAY=${DISPLAY:-:0}
+    - QT_X11_NO_MITSHM=1
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+# ── interactive base: display + USB / HID passthrough ─────────────────────
+# For interactive debugging shells that need to access robot hardware
+# (ESP32 serial, LiDAR, joystick) AND open GUI tools (rviz, rqt, gazebo).
+#   service:
+#     <<: *interactive
+#   run:
+#     xhost +local:docker
+#     docker compose -f docker/docker-compose.yml run --rm <service>
+x-interactive: &interactive
+  <<: *base
+  privileged: true
+  environment:
+    - DISPLAY=${DISPLAY:-:0}
+    - QT_X11_NO_MITSHM=1
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+  devices:
+    # micro-ROS ESP32
+    - /dev/ttyACM0:/dev/ttyACM0
+    # LiDAR (varies by model — add yours here if it uses a different tty)
+    - /dev/ttyACM1:/dev/ttyACM1
+    # Joystick / gamepad
+    - /dev/input/js0:/dev/input/js0
 
 services:
 
@@ -71,11 +118,16 @@ services:
   #  Utility
   # ════════════════════════════════════════════════════════════════════════
 
-  # Interactive CLI shell with the workspace sourced. No display, no devices.
-  # Use it to run `ros2 topic ...`, build, or poke at the graph.
+  # Interactive CLI shell with the workspace sourced. Has display forwarding
+  # and USB/HID passthrough so you can run GUI tools (rviz, rqt, gazebo-gui)
+  # AND interact with robot hardware (ESP32, LiDAR, joystick) from one shell.
+  # First run this once per login session on the host:
+  #   xhost +local:docker
+  # then:
   #   docker compose -f docker/docker-compose.yml run --rm shell
+  # Try: ros2 topic list, ros2 run rviz2 rviz2, screen /dev/ttyACM0 115200
   shell:
-    <<: *base
+    <<: *interactive
     container_name: burgerbot_shell
     command: bash
 
@@ -215,7 +267,7 @@ services:
     privileged: true
     volumes:
       - /dev:/dev
-    command: serial --dev /dev/ttyACM0 -b 921600
+    command: serial --dev /dev/ttyUSB0 -b 921600
     restart: unless-stopped
 
   # Sensors only: robot_state_publisher, LiDAR, IMU filter, EKF.
