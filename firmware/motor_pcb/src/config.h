@@ -111,11 +111,12 @@ constexpr const char* PID_PREF_KEY_KP           = "kp";
 constexpr const char* PID_PREF_KEY_KI           = "ki";
 constexpr const char* PID_PREF_KEY_KD           = "kd";
 
-constexpr const char* STICTION_PREFS_NAMESPACE   = "stick";
-constexpr const char* STICTION_PREF_KEY_M1_FWD  = "m1f";
-constexpr const char* STICTION_PREF_KEY_M1_REV  = "m1r";
-constexpr const char* STICTION_PREF_KEY_M2_FWD  = "m2f";
-constexpr const char* STICTION_PREF_KEY_M2_REV  = "m2r";
+constexpr const char* STICTION_PREFS_NAMESPACE    = "stick";
+constexpr const char* STICTION_PREF_KEY_M1_FWD   = "m1f";
+constexpr const char* STICTION_PREF_KEY_M1_REV   = "m1r";
+constexpr const char* STICTION_PREF_KEY_M2_FWD   = "m2f";
+constexpr const char* STICTION_PREF_KEY_M2_REV   = "m2r";
+constexpr const char* STICTION_PREF_KEY_TRIGGER  = "trig";
 
 // ═══════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════

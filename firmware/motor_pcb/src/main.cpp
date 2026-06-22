@@ -35,19 +35,22 @@ void setup() {
     initStatusLed();
     setStatusLedImmediate(LedCode::BOOTING);
 
-    // ── Stiction calibration (first boot or forced) ─────────────
-    // If any threshold is zero, run calibration
-    bool needs_calibration = false;
-    for (int m = 1; m <= 2 && !needs_calibration; m++) {
-        for (int d = 0; d <= 1 && !needs_calibration; d++) {
-            if (getStictionThresholdPwm(m, d == 1) < 0.01f) {
-                needs_calibration = true;
+    // ── Stiction calibration (first boot, forced, or triggered) ──
+    bool run_cal = isStictionCalibrationTriggered();  // check NVS trigger first
+    if (!run_cal) {
+        // Fallback: auto-calibrate if any threshold is zero (fresh NVS)
+        for (int m = 1; m <= 2 && !run_cal; m++) {
+            for (int d = 0; d <= 1 && !run_cal; d++) {
+                if (getStictionThresholdPwm(m, d == 1) < 0.01f) {
+                    run_cal = true;
+                }
             }
         }
     }
-    if (needs_calibration) {
+    if (run_cal) {
         setStatusLedImmediate(LedCode::MAG_CALIB);  // purple during calibration
         calibrateStiction();
+        clearStictionCalibrationTrigger();           // consume trigger flag
     }
     setStatusLedImmediate(LedCode::WAITING_AGENT);
 
