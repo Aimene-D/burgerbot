@@ -27,11 +27,13 @@ void initOdometry() {
 }
 
 void runControlStep(uint32_t dt_ms, float m1_target_rpm, float m2_target_rpm) {
-    static int32_t prev_m1_count  = 0;
-    static int32_t prev_m2_count  = 0;
-    static int32_t accum_m1_delta = 0;
-    static int32_t accum_m2_delta = 0;
-    static uint32_t accum_dt_ms   = 0;
+    static int32_t  prev_m1_count   = 0;
+    static int32_t  prev_m2_count   = 0;
+    static int32_t  accum_m1_delta  = 0;
+    static int32_t  accum_m2_delta  = 0;
+    static uint32_t accum_dt_ms     = 0;
+    static float    prev_m1_target  = 0.0f;
+    static float    prev_m2_target  = 0.0f;
 
     const float dt_s = static_cast<float>(dt_ms) / 1000.0f;
 
@@ -85,8 +87,9 @@ void runControlStep(uint32_t dt_ms, float m1_target_rpm, float m2_target_rpm) {
     if (fabsf(g_m2_measured_rpm) < RPM_NOISE_EPS) g_m2_measured_rpm = 0.0f;
 
     // ── 4. Odometry integration (mid-point method) ──────────────
-    const float v_l_mps = (g_m1_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
-    const float v_r_mps = (g_m2_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
+    // m1 = right wheel, m2 = left wheel (see setTargetsFromCmdVel)
+    const float v_l_mps = (g_m2_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
+    const float v_r_mps = (g_m1_measured_rpm * 2.0f * static_cast<float>(M_PI) * WHEEL_RADIUS_M) / 60.0f;
     g_odom.linear_mps    = 0.5f * (v_r_mps + v_l_mps);
     g_odom.angular_radps = (v_r_mps - v_l_mps) / WHEEL_BASE_M;
 
@@ -104,12 +107,12 @@ void runControlStep(uint32_t dt_ms, float m1_target_rpm, float m2_target_rpm) {
         g_m1_pid.Reset();
         g_m2_pid.Reset();
         stopMotors();
+        prev_m1_target = 0.0f;
+        prev_m2_target = 0.0f;
         return;
     }
 
     // ── 6. Slew limiting ─────────────────────────────────────────
-    static float prev_m1_target = 0.0f;
-    static float prev_m2_target = 0.0f;
     const float max_step = MAX_RPM_SLEW_RATE * dt_s;
     float slew_m1 = constrain(m1_target_rpm, prev_m1_target - max_step, prev_m1_target + max_step);
     float slew_m2 = constrain(m2_target_rpm, prev_m2_target - max_step, prev_m2_target + max_step);

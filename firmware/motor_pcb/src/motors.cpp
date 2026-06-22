@@ -85,8 +85,8 @@ void setTargetsFromCmdVel(float linear_x_mps, float angular_z_radps) {
     // These are read under mutex by controlTask
     extern float g_m1_target_rpm;
     extern float g_m2_target_rpm;
-    g_m1_target_rpm = v_left  * rps_to_rpm;
-    g_m2_target_rpm = v_right * rps_to_rpm;
+    g_m1_target_rpm = v_right * rps_to_rpm;
+    g_m2_target_rpm = v_left  * rps_to_rpm;
 }
 
 // ── Stiction calibration ──────────────────────────────────────────
@@ -164,4 +164,31 @@ float getStictionThresholdPwm(int motor, bool reverse) {
     int m = (motor == 1) ? 0 : 1;
     int d = reverse ? 1 : 0;
     return g_stiction_threshold[m][d];
+}
+
+// ── Stiction calibration boot trigger ────────────────────────────
+void triggerStictionCalibration() {
+    Preferences prefs;
+    if (prefs.begin(STICTION_PREFS_NAMESPACE, false)) {
+        prefs.putBool(STICTION_PREF_KEY_TRIGGER, true);
+        prefs.end();
+    }
+}
+
+bool isStictionCalibrationTriggered() {
+    Preferences prefs;
+    bool triggered = false;
+    if (prefs.begin(STICTION_PREFS_NAMESPACE, true)) {
+        triggered = prefs.getBool(STICTION_PREF_KEY_TRIGGER, false);
+        prefs.end();
+    }
+    return triggered;
+}
+
+void clearStictionCalibrationTrigger() {
+    Preferences prefs;
+    if (prefs.begin(STICTION_PREFS_NAMESPACE, false)) {
+        prefs.remove(STICTION_PREF_KEY_TRIGGER);
+        prefs.end();
+    }
 }
