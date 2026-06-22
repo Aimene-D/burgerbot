@@ -299,6 +299,7 @@ without any port mapping.
 | `bond_timeout: 30.0` in Nav2 | Old value was `0.0` which silently hides lifecycle failures |
 | `robot_radius: 0.105 m` | Actual chassis 0.0825 m + 0.02 m safety margin |
 | `lidar` frame (not `base_scan`) | Matches `lds02rr_driver` frame_id; wrong name → empty costmaps |
+| `reverse_scan=true` in LiDAR driver | LDS02RR scans CW; LaserScan convention is CCW. The LDS library outputs raw CW angles (`cw=true`). Index is reversed via `(360 - raw) % 360` so CCW-increasing LaserScan angles map to correct physical directions. |
 | Wheel geometry from firmware | `radius=0.0625, sep=0.282`; old URDFs had wrong values causing odometry drift |
 | `publish_odom_tf=false` in Gazebo DiffDrive | Prevents TF conflict with EKF on `odom->base_link` |
 | `ParameterValue(value_type=str)` on `robot_description` | ROS 2 Jazzy launch auto-parses `Command()` output as YAML; URDF XML breaks YAML parsing |
