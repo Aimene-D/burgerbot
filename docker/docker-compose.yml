@@ -24,6 +24,8 @@ x-base: &base
   tty: true
   environment:
     - ROS_DOMAIN_ID=0
+  volumes:
+    - ../ros2_ws/src:/ros2_ws/src:rw
 
 # ── shared base: GUI services, forwards the host X server (Ubuntu) ───────────
 # Requires NVIDIA GPU + nvidia-container-toolkit on the host for HW-accelerated
@@ -84,6 +86,7 @@ x-interactive: &interactive
     - DISPLAY=${DISPLAY:-:0}
     - QT_X11_NO_MITSHM=1
   volumes:
+    - ../ros2_ws/src:/ros2_ws/src:rw
     - /tmp/.X11-unix:/tmp/.X11-unix:rw
   devices:
     # micro-ROS ESP32
@@ -186,8 +189,19 @@ services:
   #   xhost +local:docker
   #   docker compose -f docker/docker-compose.yml run --rm rviz
   rviz:
-    <<: *gui
+    <<: *gui-generic
     container_name: burgerbot_rviz
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev/dri:/dev/dri:ro
+      # Override broken indexed_8bit_image shaders (sampler1D + sampler2D conflict)
+      - /tmp/opencode/rviz_fix/indexed_8bit_image.material:/opt/ros/jazzy/share/rviz_rendering/ogre_media/materials/scripts/indexed_8bit_image.material:ro
+      - /tmp/opencode/rviz_fix/glsl120/indexed_8bit_image.frag:/opt/ros/jazzy/share/rviz_rendering/ogre_media/materials/glsl120/indexed_8bit_image.frag:ro
+    environment:
+      - ROS_DOMAIN_ID=0
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+
     command: >
       bash -c "source /ros2_ws/install/setup.bash &&
                ros2 launch burgerbot debug.launch.py use_sim_time:=true"
