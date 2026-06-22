@@ -20,8 +20,16 @@ bool      g_agent_connected = false;
 
 // ── Telemetry copies (filled under mutex by controlTask, read by microrosTask)
 OdomState s_telemetry_odom;
-float s_telemetry_m1_rpm = 0.0f;
-float s_telemetry_m2_rpm = 0.0f;
+float s_telemetry_m1_rpm     = 0.0f;
+float s_telemetry_m2_rpm     = 0.0f;
+float s_telemetry_m1_tgt_rpm = 0.0f;
+float s_telemetry_m2_tgt_rpm = 0.0f;
+
+// ── Pending PID config (written by microrosTask callback, read by controlTask)
+float g_pid_config_kp       = 0.0f;
+float g_pid_config_ki       = 0.0f;
+float g_pid_config_kd       = 0.0f;
+bool  g_pid_config_pending  = false;
 
 // ═══════════════════════════════════════════════════════════════
 // controlTask — Core 0, priority 5, 1 kHz hard real-time
@@ -46,24 +54,46 @@ void controlTask(void* pvParams) {
         last_cmd = g_last_cmd_ms;
         xSemaphoreGive(g_state_mutex);
 
-        // ── 2. Command timeout check ────────────────────────────
+        // ── 2. Apply deferred PID config if pending ─────────────
+        {
+            float kp, ki, kd;
+            bool pending;
+            xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+            pending = g_pid_config_pending;
+            kp = g_pid_config_kp;
+            ki = g_pid_config_ki;
+            kd = g_pid_config_kd;
+            g_pid_config_pending = false;
+            xSemaphoreGive(g_state_mutex);
+            if (pending) {
+                g_m1_pid.SetGains(kp, ki, kd);
+                g_m2_pid.SetGains(kp, ki, kd);
+                ESP_LOGI("CTRL", "PID gains applied: Kp=%.3f Ki=%.3f Kd=%.3f", kp, ki, kd);
+            }
+        }
+
+        // ── 3. Command timeout check ────────────────────────────
         if ((millis() - last_cmd) > CMD_TIMEOUT_MS) {
             stopMotors();
             g_m1_pid.Reset();
             g_m2_pid.Reset();
             setStatusLed(LedCode::CMD_TIMEOUT);
-            esp_task_wdt_reset();
-            continue;
+            tgt1 = 0.0f;
+            tgt2 = 0.0f;
+            // Not returning: runControlStep reads encoders + updates
+            // odometry even in timeout, so /wheel_odom stays live.
         }
 
-        // ── 3. Run control step (PCNT → RPM → odom → PID → PWM) ─
+        // ── 4. Run control step (PCNT → RPM → odom → PID → PWM) ─
         runControlStep(CONTROL_PERIOD_MS, tgt1, tgt2);
 
         // ── 4. Update shared measured state for telemetry ───────
         xSemaphoreTake(g_state_mutex, portMAX_DELAY);
-        s_telemetry_m1_rpm = g_m1_measured_rpm;
-        s_telemetry_m2_rpm = g_m2_measured_rpm;
-        s_telemetry_odom   = g_odom;
+        s_telemetry_m1_rpm     = g_m1_measured_rpm;
+        s_telemetry_m2_rpm     = g_m2_measured_rpm;
+        s_telemetry_m1_tgt_rpm = tgt1;
+        s_telemetry_m2_tgt_rpm = tgt2;
+        s_telemetry_odom       = g_odom;
         xSemaphoreGive(g_state_mutex);
 
         // ── 5. LED status (don't drown out microrosTask when disconnected) ──

@@ -14,6 +14,7 @@
 
 #include <geometry_msgs/msg/twist.h>
 #include <nav_msgs/msg/odometry.h>
+#include <std_msgs/msg/bool.h>
 #include <std_msgs/msg/float32_multi_array.h>
 
 constexpr uint32_t ROS_TIME_SYNC_PERIOD_MS = 5000;
@@ -34,12 +35,17 @@ static rcl_publisher_t                  s_pub_odom;
 static rcl_publisher_t                  s_pub_speeds;
 static nav_msgs__msg__Odometry          s_msg_odom = {};
 static std_msgs__msg__Float32MultiArray s_msg_speeds = {};
-static float                            s_speed_data[2];
+static float                            s_speed_data[4];
 static uint32_t                         s_last_sync_ms = 0;
 
 // Subscriptions
-static rcl_subscription_t        s_sub_cmd_vel;
-static geometry_msgs__msg__Twist s_msg_cmd_vel = {};
+static rcl_subscription_t                  s_sub_cmd_vel;
+static geometry_msgs__msg__Twist           s_msg_cmd_vel = {};
+static rcl_subscription_t                  s_sub_pid;
+static std_msgs__msg__Float32MultiArray    s_msg_pid     = {};
+static float                               s_pid_data[3];
+static rcl_subscription_t                  s_sub_stiction;
+static std_msgs__msg__Bool                 s_msg_stiction = {};
 
 // Stable addresses for micro-ROS message strings
 static const char* s_odom_frame  = "odom";
@@ -57,6 +63,25 @@ static void cmdVelCallback(const void* msg) {
     setTargetsFromCmdVel(linear, angular);
     g_last_cmd_ms = millis();
     xSemaphoreGive(g_state_mutex);
+}
+
+// ── /pid_config callback ───────────────────────────────────────
+static void pidConfigCallback(const void* msg) {
+    const auto* config = static_cast<const std_msgs__msg__Float32MultiArray*>(msg);
+    if (config->data.size < 3) return;
+    xSemaphoreTake(g_state_mutex, portMAX_DELAY);
+    g_pid_config_pending = true;
+    g_pid_config_kp = config->data.data[0];
+    g_pid_config_ki = config->data.data[1];
+    g_pid_config_kd = config->data.data[2];
+    xSemaphoreGive(g_state_mutex);
+}
+
+// ── /calibrate_stiction callback ───────────────────────────────
+static void stictionCalibCallback(const void* msg) {
+    (void)msg;
+    triggerStictionCalibration();
+    ESP_LOGW(TAG, "Stiction calibration flagged for next boot");
 }
 
 static void fillOdomMsg(const OdomState& odom) {
@@ -80,12 +105,14 @@ static void fillOdomMsg(const OdomState& odom) {
     s_msg_odom.twist.twist.angular.z = odom.angular_radps;
 }
 
-static void fillSpeedsMsg(float rpm_left, float rpm_right) {
+static void fillSpeedsMsg(float target_left, float target_right, float rpm_left, float rpm_right) {
     s_msg_speeds.data.data       = s_speed_data;
-    s_msg_speeds.data.data[0]    = rpm_left;
-    s_msg_speeds.data.data[1]    = rpm_right;
-    s_msg_speeds.data.size       = 2;
-    s_msg_speeds.data.capacity   = 2;
+    s_msg_speeds.data.data[0]    = target_left;
+    s_msg_speeds.data.data[1]    = target_right;
+    s_msg_speeds.data.data[2]    = rpm_left;
+    s_msg_speeds.data.data[3]    = rpm_right;
+    s_msg_speeds.data.size       = 4;
+    s_msg_speeds.data.capacity   = 4;
 }
 
 static bool syncRosClock(uint32_t timeout_ms) {
@@ -115,11 +142,27 @@ static bool createSession() {
             ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
             TOPIC_CMD_VEL) != RCL_RET_OK) return false;
 
+    if (rclc_subscription_init_default(
+            &s_sub_pid, &s_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+            TOPIC_PID_CONFIG) != RCL_RET_OK) return false;
+
+    if (rclc_subscription_init_default(
+            &s_sub_stiction, &s_node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool),
+            TOPIC_CALIB_STICTION) != RCL_RET_OK) return false;
+
     s_executor = rclc_executor_get_zero_initialized_executor();
-    if (rclc_executor_init(&s_executor, &s_support.context, 1, &allocator) != RCL_RET_OK) return false;
+    if (rclc_executor_init(&s_executor, &s_support.context, 3, &allocator) != RCL_RET_OK) return false;
     if (rclc_executor_add_subscription(
             &s_executor, &s_sub_cmd_vel, &s_msg_cmd_vel,
             &cmdVelCallback, ON_NEW_DATA) != RCL_RET_OK) return false;
+    if (rclc_executor_add_subscription(
+            &s_executor, &s_sub_pid, &s_msg_pid,
+            &pidConfigCallback, ON_NEW_DATA) != RCL_RET_OK) return false;
+    if (rclc_executor_add_subscription(
+            &s_executor, &s_sub_stiction, &s_msg_stiction,
+            &stictionCalibCallback, ON_NEW_DATA) != RCL_RET_OK) return false;
 
     return true;
 }
@@ -133,6 +176,8 @@ static void destroySession() {
 
     (void)rclc_executor_fini(&s_executor);
     (void)rcl_subscription_fini(&s_sub_cmd_vel, &s_node);
+    (void)rcl_subscription_fini(&s_sub_pid, &s_node);
+    (void)rcl_subscription_fini(&s_sub_stiction, &s_node);
     (void)rcl_publisher_fini(&s_pub_odom, &s_node);
     (void)rcl_publisher_fini(&s_pub_speeds, &s_node);
     (void)rcl_node_fini(&s_node);
@@ -192,12 +237,14 @@ void microrosTask(void* pvParams) {
                 if (now - last_pub >= TELEMETRY_PERIOD_MS) {
                     xSemaphoreTake(g_state_mutex, portMAX_DELAY);
                     OdomState odom_copy = s_telemetry_odom;
-                    float m1 = s_telemetry_m1_rpm;
-                    float m2 = s_telemetry_m2_rpm;
+                    float m1_act = s_telemetry_m1_rpm;
+                    float m2_act = s_telemetry_m2_rpm;
+                    float m1_tgt = s_telemetry_m1_tgt_rpm;
+                    float m2_tgt = s_telemetry_m2_tgt_rpm;
                     xSemaphoreGive(g_state_mutex);
 
                     fillOdomMsg(odom_copy);
-                    fillSpeedsMsg(m1, m2);
+                    fillSpeedsMsg(m1_tgt, m2_tgt, m1_act, m2_act);
 
                     if (rcl_publish(&s_pub_odom, &s_msg_odom, NULL) != RCL_RET_OK) {
                         destroySession();

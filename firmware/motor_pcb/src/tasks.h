@@ -18,6 +18,14 @@ extern bool      g_agent_connected;
 extern OdomState s_telemetry_odom;
 extern float     s_telemetry_m1_rpm;
 extern float     s_telemetry_m2_rpm;
+extern float     s_telemetry_m1_tgt_rpm;
+extern float     s_telemetry_m2_tgt_rpm;
+
+// Written by microrosTask /pid_config callback, read by controlTask
+extern float     g_pid_config_kp;
+extern float     g_pid_config_ki;
+extern float     g_pid_config_kd;
+extern bool      g_pid_config_pending;
 
 // ── FreeRTOS task functions ─────────────────────────────────────
 void controlTask(void* pvParams);
