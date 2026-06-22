@@ -4,6 +4,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     port = LaunchConfiguration('port', default='/dev/ttyACM1')
+    reverse_scan = LaunchConfiguration('reverse_scan', default='true')
 
     return LaunchDescription([
         Node(
@@ -18,6 +19,7 @@ def generate_launch_description():
                 'range_min':    0.12,
                 'range_max':    3.5,
                 'angle_offset': 0.0,
+                'reverse_scan': reverse_scan,
             }]
         )
     ])

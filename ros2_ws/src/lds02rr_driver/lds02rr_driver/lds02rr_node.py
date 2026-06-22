@@ -26,6 +26,12 @@ class LDS02RRDriver(Node):
         self.declare_parameter('range_min',    0.12)
         self.declare_parameter('range_max',    3.5)
         self.declare_parameter('angle_offset', 0.0)
+        # reverse_scan: LDS02RR scans CW but LaserScan convention is CCW.
+        # The LDS library (LDS_LDS02RR) sets cw=true, outputting raw CW
+        # angles (0-359). reverse_scan=true converts CW indices to CCW
+        # via (360 - raw_idx) % 360. Set false for LiDARs that already
+        # output CCW-normalized angles.
+        self.declare_parameter('reverse_scan', True)
 
         port       = self.get_parameter('port').value
         baud       = self.get_parameter('baud').value
@@ -33,6 +39,12 @@ class LDS02RRDriver(Node):
         self.range_min     = self.get_parameter('range_min').value
         self.range_max     = self.get_parameter('range_max').value
         self.angle_offset  = self.get_parameter('angle_offset').value
+        self.reverse_scan  = self.get_parameter('reverse_scan').value
+
+        self.get_logger().info(
+            f'LDS02RR driver: reverse_scan={self.reverse_scan}, '
+            f'angle_offset={self.angle_offset}, frame_id={self.frame_id}'
+        )
 
         self.pub = self.create_publisher(LaserScan, '/scan', 10)
 
@@ -103,7 +115,12 @@ class LDS02RRDriver(Node):
         except ValueError:
             return
 
-        idx = int(round(angle_deg)) % TOTAL_SAMPLES
+        # LDS02RR scans CW; LDS library outputs raw CW angles (0-359).
+        # LaserScan standard uses CCW-increasing angles. reverse_scan
+        # converts CW→CCW via (360 - idx) % 360.
+        # URDF lidar_joint rpy="0 0 3.14159" puts lidar +X = backward.
+        raw_idx = int(round(angle_deg)) % TOTAL_SAMPLES
+        idx = (TOTAL_SAMPLES - raw_idx) % TOTAL_SAMPLES if self.reverse_scan else raw_idx
         dist_m = dist_mm / 1000.0
 
         if dist_mm <= 0 or dist_m < self.range_min or dist_m > self.range_max:
