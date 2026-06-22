@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, LogInfo, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
 from launch.events import matches_action
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import LifecycleNode
@@ -30,17 +31,26 @@ def generate_launch_description():
         output='screen',
     )
 
-    configure_event = EmitEvent(
-        event=ChangeState(
-            lifecycle_node_matcher=matches_action(slam_node),
-            transition_id=Transition.TRANSITION_CONFIGURE,
+    # Wait for the slam_toolbox process to start before sending configure.
+    # A bare EmitEvent at the top level fires before the node is ready,
+    # so the configure service call is silently lost → node stays unconfigured
+    # → no /scan subscription → no map→odom TF → scan rotates with robot.
+    configure_event = RegisterEventHandler(
+        OnProcessStart(
+            target_action=slam_node,
+            on_start=[
+                EmitEvent(event=ChangeState(
+                    lifecycle_node_matcher=matches_action(slam_node),
+                    transition_id=Transition.TRANSITION_CONFIGURE,
+                ))
+            ]
         )
     )
 
     activate_event = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=slam_node,
-            start_state='configuring',
+            start_state='unconfigured',
             goal_state='inactive',
             entities=[
                 LogInfo(msg='[slam_toolbox] configured, activating.'),

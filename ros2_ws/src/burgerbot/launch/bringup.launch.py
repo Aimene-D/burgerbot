@@ -11,8 +11,9 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     pkg = FindPackageShare('burgerbot')
 
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    lidar_port   = LaunchConfiguration('lidar_port')
+    use_sim_time  = LaunchConfiguration('use_sim_time')
+    lidar_port    = LaunchConfiguration('lidar_port')
+    reverse_scan  = LaunchConfiguration('reverse_scan')
 
     urdf_xacro = PathJoinSubstitution([pkg, 'urdf', 'burgerbot.urdf.xacro'])
     robot_description = {
@@ -26,6 +27,20 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'lidar_port', default_value='/dev/ttyACM1',
             description='Serial port for LDS02RR LiDAR'),
+        DeclareLaunchArgument(
+            'reverse_scan', default_value='true',
+            description='Reverse scan direction (true for CW->CCW conversion)'),
+
+        # ── Joint state publisher: zero positions for continuous wheel
+        # joints so RSP publishes base_link->left/right_wheel TF for
+        # RViz RobotModel visualization on hardware ──────────────────
+        Node(
+            package='joint_state_publisher',
+            executable='joint_state_publisher',
+            name='joint_state_publisher',
+            parameters=[robot_description, {'use_sim_time': use_sim_time}],
+            output='screen',
+        ),
 
         # ── Robot state publisher: URDF -> /tf static transforms ──────────
         Node(
@@ -49,6 +64,7 @@ def generate_launch_description():
                 'range_min':    0.12,
                 'range_max':    3.5,
                 'angle_offset': 0.0,
+                'reverse_scan': reverse_scan,
                 'use_sim_time': use_sim_time,
             }],
             output='screen',
