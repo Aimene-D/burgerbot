@@ -17,6 +17,8 @@
 #include <std_msgs/msg/bool.h>
 #include <std_msgs/msg/float32_multi_array.h>
 
+static constexpr const char* TAG = "burgerbot_base";
+
 constexpr uint32_t ROS_TIME_SYNC_PERIOD_MS = 5000;
 
 enum class UrosState : uint8_t {
@@ -85,9 +87,18 @@ static void stictionCalibCallback(const void* msg) {
 }
 
 static void fillOdomMsg(const OdomState& odom) {
-    int64_t now_ns = rmw_uros_epoch_nanos();
-    s_msg_odom.header.stamp.sec      = static_cast<int32_t>(now_ns / 1000000000L);
-    s_msg_odom.header.stamp.nanosec = static_cast<uint32_t>(now_ns % 1000000000L);
+    // ── Timestamp: backdate to when encoder data was sampled ──────────
+    // odom.timestamp_ms is set by the control loop at encoder read time.
+    // We compute how long ago that was and subtract from the current epoch,
+    // giving a timestamp that accurately reflects when the robot was at this pose.
+    int64_t epoch_ns = rmw_uros_epoch_nanos();
+    uint32_t local_now_ms = millis();
+    if (epoch_ns > 0 && odom.timestamp_ms > 0 && local_now_ms >= odom.timestamp_ms) {
+        int64_t delta_ms = static_cast<int64_t>(local_now_ms) - static_cast<int64_t>(odom.timestamp_ms);
+        epoch_ns -= delta_ms * 1000000LL;
+    }
+    s_msg_odom.header.stamp.sec      = static_cast<int32_t>(epoch_ns / 1000000000L);
+    s_msg_odom.header.stamp.nanosec = static_cast<uint32_t>(epoch_ns % 1000000000L);
 
     s_msg_odom.header.frame_id.data    = const_cast<char*>(s_odom_frame);
     s_msg_odom.header.frame_id.size    = 4;
@@ -103,6 +114,18 @@ static void fillOdomMsg(const OdomState& odom) {
 
     s_msg_odom.twist.twist.linear.x  = odom.linear_mps;
     s_msg_odom.twist.twist.angular.z = odom.angular_radps;
+
+    // ── Covariances: tell robot_localization how much to trust us ─────
+    // Without these, robot_localization treats wheel odometry as perfect
+    // (zero covariance = infinite confidence) and ignores IMU corrections.
+    // Velocity: vx 5 cm/s stddev, vyaw ~25°/s stddev
+    s_msg_odom.twist.covariance[0]  = 0.05f;
+    s_msg_odom.twist.covariance[35] = 0.20f;
+    // Pose: x,y ~14 cm stddev, yaw ~18° stddev (not fused by EKF currently,
+    // but set for correctness if config changes)
+    s_msg_odom.pose.covariance[0]  = 0.02f;
+    s_msg_odom.pose.covariance[7]  = 0.02f;
+    s_msg_odom.pose.covariance[35] = 0.10f;
 }
 
 static void fillSpeedsMsg(float target_left, float target_right, float rpm_left, float rpm_right) {
@@ -125,7 +148,16 @@ static bool createSession() {
     rcl_allocator_t allocator = rcl_get_default_allocator();
     if (rclc_support_init(&s_support, 0, NULL, &allocator) != RCL_RET_OK) return false;
     if (rclc_node_init_default(&s_node, "burgerbot_base", "", &s_support) != RCL_RET_OK) return false;
-    (void)syncRosClock(1000);
+
+    // Retry initial time sync: the session may not be fully negotiated yet
+    // on first attempt. 3 tries × 500ms = 1.5s max delay.
+    for (int i = 0; i < 3; i++) {
+        if (syncRosClock(500)) break;
+        vTaskDelay(pdMS_TO_TICKS(100));
+        if (i == 2) {
+            ESP_LOGW(TAG, "Initial time sync failed — odometry timestamps will be stale until next periodic sync");
+        }
+    }
 
     if (rclc_publisher_init_default(
             &s_pub_odom, &s_node,

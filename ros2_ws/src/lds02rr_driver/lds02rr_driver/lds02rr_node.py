@@ -66,6 +66,12 @@ class LDS02RRDriver(Node):
         # Read buffer — we read lines from serial
         self._line_buf = b''
 
+        # Skip the first scan-complete marker: the library triggers scan_completed=true
+        # at angle 0 (the FIRST point of each rotation), not angle 359 (the last).
+        # The first "# scan complete" arrives after only 1/360 laser points have been
+        # accumulated. We skip that publish and accumulate a full rotation first.
+        self._first_scan_seen = False
+
         self.create_timer(0.001, self._read_cb)
 
     # ── Serial reader ─────────────────────────────────────────
@@ -100,6 +106,15 @@ class LDS02RRDriver(Node):
                         self.scan_freq_hz = float(freq_str)
                     except (ValueError, IndexError):
                         pass
+                # The library triggers scan_completed=true at angle 0 (FIRST point
+                # of each rotation). The first "# scan complete" arrives after only
+                # 1/360 laser points. Skip it so we accumulate a full rotation first.
+                if not self._first_scan_seen:
+                    self._first_scan_seen = True
+                    self.get_logger().info(
+                        'First scan boundary — skipping publish, '
+                        'accumulating full rotation first')
+                    return
                 self._publish_scan()
             return
 
@@ -136,9 +151,9 @@ class LDS02RRDriver(Node):
         msg.header.stamp    = self.get_clock().now().to_msg()
         msg.header.frame_id = self.frame_id
 
-        msg.angle_min       = self.angle_offset
-        msg.angle_max       = self.angle_offset + 2.0 * math.pi
         msg.angle_increment = (2.0 * math.pi) / TOTAL_SAMPLES
+        msg.angle_min       = self.angle_offset
+        msg.angle_max       = self.angle_offset + (TOTAL_SAMPLES - 1) * msg.angle_increment
         msg.time_increment  = (1.0 / self.scan_freq_hz) / TOTAL_SAMPLES
         msg.scan_time       = 1.0 / self.scan_freq_hz
         msg.range_min       = self.range_min

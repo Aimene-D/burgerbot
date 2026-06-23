@@ -97,6 +97,7 @@ void runControlStep(uint32_t dt_ms, float m1_target_rpm, float m2_target_rpm) {
     g_odom.x_m       += g_odom.linear_mps * cosf(theta_mid) * dt_s;
     g_odom.y_m       += g_odom.linear_mps * sinf(theta_mid) * dt_s;
     g_odom.theta_rad  = normalizeAngleRad(g_odom.theta_rad + (g_odom.angular_radps * dt_s));
+    g_odom.timestamp_ms = millis();  // capture sample time for timestamp backdating
 
     // ── 5. Stop check (zero targets → brake) ────────────────────
     const bool stop_requested =

@@ -7,6 +7,7 @@ struct OdomState {
     float theta_rad   = 0.0f;
     float linear_mps  = 0.0f;
     float angular_radps = 0.0f;
+    uint32_t timestamp_ms = 0;  // local millis() when odometry was computed
 };
 
 extern OdomState g_odom;

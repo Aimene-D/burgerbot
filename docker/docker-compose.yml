@@ -217,7 +217,7 @@ services:
   #   xhost +local:docker
   #   docker compose -f docker/docker-compose.yml run --rm sim-slam-gui
   sim-slam-gui:
-    <<: *gui
+    <<: *gui-generic
     container_name: burgerbot_sim_slam_gui
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
